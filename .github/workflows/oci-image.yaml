@@ -13,6 +13,10 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE: ghcr.io/amoenus/magnetron
+  BUILDER: paketobuildpacks/builder-jammy-base
+
 jobs:
   test:
     name: Test
@@ -32,55 +36,112 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
-  image:
-    name: Build image
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.arch }} image
     needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Set up pack
+        uses: buildpacks/github-actions/setup-pack@v5.12.1
+
+      - name: Trust builder
+        run: pack config trusted-builders add "${BUILDER}"
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Extract image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        env:
-          DOCKER_METADATA_ANNOTATIONS_LEVELS: index,manifest
-        with:
-          images: ghcr.io/amoenus/magnetron
-          tags: |
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha,format=short
-          labels: |
-            org.opencontainers.image.title=Magnetron
-            org.opencontainers.image.description=Small internal web UI and API for sending magnet links to bitmagnet and qBittorrent.
-            org.opencontainers.image.url=https://github.com/Amoenus/magnetron
-            org.opencontainers.image.documentation=https://github.com/Amoenus/magnetron#readme
-            org.opencontainers.image.source=https://github.com/Amoenus/magnetron
-            org.opencontainers.image.vendor=Amoenus
-            org.opencontainers.image.authors=Amoenus
-            org.opencontainers.image.licenses=MIT
-            org.opencontainers.image.base.name=docker.io/library/python:3.13-alpine
+      - name: Compute image tags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            refs=("pr-${{ github.event.number }}")
+            image="magnetron"
+          else
+            image="${IMAGE}"
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              refs=("${GITHUB_REF_NAME}")
+            else
+              refs=("${GITHUB_REF_NAME}")
+            fi
+            refs+=("sha-${GITHUB_SHA::7}")
+          fi
 
-      - name: Build and optionally push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          annotations: ${{ steps.meta.outputs.annotations }}
-          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
-          sbom: ${{ github.event_name != 'pull_request' }}
+          primary="${image}:${refs[0]}-${{ matrix.arch }}"
+          tag_args=""
+          for ref in "${refs[@]:1}"; do
+            tag_args="${tag_args} --tag ${image}:${ref}-${{ matrix.arch }}"
+          done
+          {
+            echo "primary=${primary}"
+            echo "args=${tag_args}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build image with Cloud Native Buildpacks
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_arg=""
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            publish_arg="--publish"
+          fi
+
+          pack build "${{ steps.tags.outputs.primary }}" \
+            --builder "${BUILDER}" \
+            --path . \
+            ${publish_arg} \
+            ${{ steps.tags.outputs.args }} \
+            --env BP_CPYTHON_VERSION=3.13.* \
+            --env BP_OCI_TITLE=Magnetron \
+            --env "BP_OCI_DESCRIPTION=Small internal web UI and API for sending magnet links to bitmagnet and qBittorrent." \
+            --env BP_OCI_URL=https://github.com/Amoenus/magnetron \
+            --env BP_OCI_DOCUMENTATION=https://github.com/Amoenus/magnetron#readme \
+            --env BP_OCI_SOURCE=https://github.com/Amoenus/magnetron \
+            --env BP_OCI_VENDOR=Amoenus \
+            --env BP_OCI_AUTHORS=Amoenus \
+            --env BP_OCI_LICENSES=MIT \
+            --env BP_OCI_VERSION="${GITHUB_REF_NAME}" \
+            --env BP_OCI_REVISION="${GITHUB_SHA}"
+
+  manifest:
+    name: Publish multi-arch manifest
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up pack
+        uses: buildpacks/github-actions/setup-pack@v5.12.1
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Publish manifest tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            refs=("${GITHUB_REF_NAME}")
+          else
+            refs=("${GITHUB_REF_NAME}")
+          fi
+          refs+=("sha-${GITHUB_SHA::7}")
+
+          for ref in "${refs[@]}"; do
+            pack manifest create "${IMAGE}:${ref}" \
+              "${IMAGE}:${ref}-amd64" \
+              "${IMAGE}:${ref}-arm64" \
+              --publish
+          done

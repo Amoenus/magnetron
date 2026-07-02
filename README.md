@@ -62,7 +62,8 @@ python -m magnetron.app
 
 ## OCI Image
 
-The GitHub Actions workflow publishes images to GHCR:
+The GitHub Actions workflow builds source-to-OCI images with Cloud Native
+Buildpacks and publishes them to GHCR:
 
 ```text
 ghcr.io/amoenus/magnetron:main
@@ -73,8 +74,8 @@ ghcr.io/amoenus/magnetron:v0.1.0
 Build locally:
 
 ```powershell
-docker build -t magnetron:dev .
-docker run --rm -p 8080:8080 magnetron:dev
+pack build magnetron:dev --builder paketobuildpacks/builder-jammy-base --path .
+docker run --rm -p 8080:8080 -e PORT=8080 magnetron:dev
 ```
 
 ## KCL Module
