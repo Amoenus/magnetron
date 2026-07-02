@@ -1,0 +1,29 @@
+[project]
+name = "magnetron"
+version = "0.1.0"
+description = "Small internal web UI and API for sending magnet links to bitmagnet and qBittorrent."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+  { name = "Amoenus" }
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/Amoenus/magnetron"
+Repository = "https://github.com/Amoenus/magnetron"
+Issues = "https://github.com/Amoenus/magnetron/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
