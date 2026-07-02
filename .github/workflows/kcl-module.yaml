@@ -33,4 +33,4 @@ jobs:
         run: kcl registry login -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
 
       - name: Publish module
-        run: kcl mod push oci://ghcr.io/amoenus/magnetron-kcl
+        run: kcl mod push oci://ghcr.io/amoenus/magnetron-kcl --force

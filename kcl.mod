@@ -3,6 +3,6 @@ name = "magnetron"
 edition = "v0.11.2"
 version = "0.1.0"
 description = "KCL metadata for the Magnetron OCI image."
-include = ["image.k", "README.md", "LICENSE"]
+include = ["kcl.mod", "image.k", "README.md", "LICENSE"]
 
 [dependencies]
