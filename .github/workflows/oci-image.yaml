@@ -131,6 +131,15 @@ jobs:
       - name: Build Magnetron APK
         run: sudo "$(go env GOPATH)/bin/melange" build melange.yaml --arch "${{ matrix.melange_arch }}" --runner bubblewrap --signing-key melange.rsa
 
+      - name: Verify APK runtime payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_path="$(find "packages/${{ matrix.apk_arch }}" -name 'magnetron-*.apk' -print -quit)"
+          test -n "${apk_path}"
+          tar -tzf "${apk_path}" | grep -F 'usr/bin/magnetron'
+          tar -tzf "${apk_path}" | grep -F 'usr/share/magnetron/site/uvicorn/__init__.py'
+
       - name: Upload APK package
         uses: actions/upload-artifact@v7
         with:

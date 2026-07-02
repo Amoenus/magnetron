@@ -35,11 +35,12 @@ pipeline:
 
       cd "${app_home}"
       export UV_LINK_MODE=copy
-      uv sync --frozen --no-dev --compile-bytecode
-      rm -f .venv/.lock
+      uv export --frozen --no-dev --format requirements-txt --output-file requirements.txt
+      uv pip install --target "${app_home}/site" --compile-bytecode --requirement requirements.txt .
 
       cat > "${bin_dir}/magnetron" <<'EOF'
       #!/bin/sh
-      exec /usr/share/magnetron/.venv/bin/uvicorn magnetron.app:app --host 0.0.0.0 --port "${PORT:-8080}"
+      export PYTHONPATH="/usr/share/magnetron/site${PYTHONPATH:+:${PYTHONPATH}}"
+      exec /usr/bin/python3.13 -m uvicorn magnetron.app:app --host 0.0.0.0 --port "${PORT:-8080}"
       EOF
       chmod +x "${bin_dir}/magnetron"
