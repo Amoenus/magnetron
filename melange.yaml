@@ -34,7 +34,9 @@ pipeline:
       cp -R src pyproject.toml uv.lock README.md LICENSE "${app_home}/"
 
       cd "${app_home}"
+      export UV_LINK_MODE=copy
       uv sync --frozen --no-dev --compile-bytecode
+      rm -f .venv/.lock
 
       cat > "${bin_dir}/magnetron" <<'EOF'
       #!/bin/sh
