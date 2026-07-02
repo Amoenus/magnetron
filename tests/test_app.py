@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from fastapi.testclient import TestClient
+
 ROOT = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(ROOT))
 
@@ -139,6 +141,39 @@ class DownstreamTests(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertIn("QBITTORRENT_API_KEY", result.message)
+
+
+class ApiTests(unittest.TestCase):
+    def test_healthz(self):
+        client = TestClient(app.app)
+
+        response = client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "up"})
+
+    def test_magnet_intake_route(self):
+        client = TestClient(app.app)
+
+        with mock.patch.object(app, "request") as request:
+            request.return_value = app.DownstreamResult(True, 200, "ok")
+            response = client.post(
+                "/api/intake/magnet",
+                json={
+                    "magnet": "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Example",
+                    "action": "index",
+                    "contentType": "movie",
+                    "contentSource": "tmdb",
+                    "contentId": "550",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["infoHash"], "0123456789ABCDEF0123456789ABCDEF01234567")
+        payload = json.loads(request.call_args.kwargs["body"])
+        self.assertEqual(payload["contentType"], "movie")
+        self.assertEqual(payload["contentSource"], "tmdb")
+        self.assertEqual(payload["contentId"], "550")
 
 
 if __name__ == "__main__":

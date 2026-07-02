@@ -1,0 +1,46 @@
+contents:
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    - ./melange.rsa.pub
+  repositories:
+    - https://packages.wolfi.dev/os
+    - '@local ./packages'
+  packages:
+    - ca-certificates-bundle
+    - magnetron@local
+    - wolfi-base
+
+accounts:
+  groups:
+    - groupname: nonroot
+      gid: 65532
+  users:
+    - username: nonroot
+      uid: 65532
+      gid: 65532
+      shell: /sbin/nologin
+  run-as: 65532
+
+entrypoint:
+  command: /usr/bin/magnetron
+
+environment:
+  PATH: /usr/sbin:/sbin:/usr/bin:/bin
+  PORT: "8080"
+
+work-dir: /usr/share/magnetron
+
+archs:
+  - amd64
+  - arm64
+
+annotations:
+  org.opencontainers.image.title: Magnetron
+  org.opencontainers.image.description: Small internal web UI and API for sending magnet links to bitmagnet and qBittorrent.
+  org.opencontainers.image.url: https://github.com/Amoenus/magnetron
+  org.opencontainers.image.documentation: https://github.com/Amoenus/magnetron#readme
+  org.opencontainers.image.source: https://github.com/Amoenus/magnetron
+  org.opencontainers.image.vendor: Amoenus
+  org.opencontainers.image.authors: Amoenus
+  org.opencontainers.image.licenses: MIT
+  org.opencontainers.image.version: 0.1.0

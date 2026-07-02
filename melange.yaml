@@ -1,0 +1,43 @@
+package:
+  name: magnetron
+  version: 0.1.0
+  epoch: 0
+  description: Small internal web UI and API for sending magnet links to bitmagnet and qBittorrent.
+  copyright:
+    - license: MIT
+  dependencies:
+    runtime:
+      - ca-certificates-bundle
+      - python-3.13
+
+environment:
+  contents:
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+      - ./melange.rsa.pub
+    repositories:
+      - https://packages.wolfi.dev/os
+    packages:
+      - busybox
+      - ca-certificates-bundle
+      - python-3.13
+      - py3-pip
+      - uv
+
+pipeline:
+  - name: Install Magnetron application
+    runs: |
+      app_home="${{targets.destdir}}/usr/share/magnetron"
+      bin_dir="${{targets.destdir}}/usr/bin"
+
+      mkdir -p "${app_home}" "${bin_dir}"
+      cp -R src pyproject.toml uv.lock README.md LICENSE "${app_home}/"
+
+      cd "${app_home}"
+      uv sync --frozen --no-dev --compile-bytecode
+
+      cat > "${bin_dir}/magnetron" <<'EOF'
+      #!/bin/sh
+      exec /usr/share/magnetron/.venv/bin/uvicorn magnetron.app:app --host 0.0.0.0 --port "${PORT:-8080}"
+      EOF
+      chmod +x "${bin_dir}/magnetron"

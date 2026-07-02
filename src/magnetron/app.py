@@ -11,9 +11,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Literal
+
+import uvicorn
+from fastapi import FastAPI, Form
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field
 
 
 INFO_HASH_HEX = re.compile(r"^[A-Fa-f0-9]{40}$")
@@ -21,6 +24,8 @@ INFO_HASH_BASE32 = re.compile(r"^[A-Z2-7a-z]{32}$")
 VALID_ACTIONS = {"index", "download", "both"}
 VALID_CONTENT_TYPES = {"unknown", "movie", "tv_show", "ebook", "audiobook", "music", "software", "xxx"}
 VALID_CONTENT_SOURCES = {"", "tmdb", "imdb"}
+
+Action = Literal["index", "download", "both"]
 
 
 @dataclass(frozen=True)
@@ -80,6 +85,14 @@ class Submission:
     qbittorrent: DownstreamResult | None
 
 
+class IntakeRequest(BaseModel):
+    magnet: str = Field(min_length=1)
+    action: Action = "index"
+    contentType: str = "tv_show"
+    contentSource: str = ""
+    contentId: str = ""
+
+
 class RecentSubmissions:
     def __init__(self, limit: int = 50) -> None:
         self._limit = limit
@@ -94,6 +107,15 @@ class RecentSubmissions:
     def list(self) -> list[Submission]:
         with self._lock:
             return list(self._items)
+
+
+settings = Settings.from_env()
+recent_submissions = RecentSubmissions()
+app = FastAPI(
+    title="Magnetron",
+    description="Manual magnet intake for bitmagnet and qBittorrent.",
+    version="0.1.0",
+)
 
 
 def normalize_info_hash(value: str) -> str:
@@ -112,9 +134,8 @@ def parse_magnet(magnet: str) -> ParsedMagnet:
         raise ValueError("input must be a magnet link")
 
     params = urllib.parse.parse_qs(parsed.query)
-    xt_values = params.get("xt", [])
     info_hash = ""
-    for xt in xt_values:
+    for xt in params.get("xt", []):
         if xt.lower().startswith("urn:btih:"):
             info_hash = normalize_info_hash(xt.split(":")[-1])
             break
@@ -151,21 +172,7 @@ def request(
 
 
 def import_to_bitmagnet(settings: Settings, parsed: ParsedMagnet) -> DownstreamResult:
-    record: dict[str, Any] = {
-        "source": settings.bitmagnet_source,
-        "infoHash": parsed.info_hash,
-        "publishedAt": now_iso(),
-    }
-    if parsed.name:
-        record["name"] = parsed.name
-    body = json.dumps(record, separators=(",", ":")).encode("utf-8")
-    return request(
-        "POST",
-        f"{settings.bitmagnet_url}/import",
-        body=body,
-        headers={"Content-Type": "application/json", "Connection": "close"},
-        timeout=30,
-    )
+    return import_to_bitmagnet_with_hint(settings, parsed, "unknown")
 
 
 def normalize_content_type(value: str) -> str:
@@ -250,6 +257,109 @@ def ready(settings: Settings) -> dict[str, DownstreamResult]:
             timeout=5,
         ),
     }
+
+
+def submit_intake(
+    settings: Settings,
+    recent: RecentSubmissions,
+    magnet: str,
+    action: str,
+    content_type: str = "tv_show",
+    content_source: str = "",
+    content_id: str = "",
+) -> tuple[int, dict[str, Any]]:
+    action = action.strip().lower()
+    if action not in VALID_ACTIONS:
+        return 400, {"error": f"action must be one of {sorted(VALID_ACTIONS)}"}
+    content_type = normalize_content_type(content_type)
+    content_source = normalize_content_source(content_source)
+    content_id = normalize_content_id(content_id)
+    if content_id and not content_source:
+        return 400, {"error": "contentSource is required when contentId is set"}
+    if content_source and not content_id:
+        return 400, {"error": "contentId is required when contentSource is set"}
+    try:
+        parsed = parse_magnet(magnet)
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+
+    bitmagnet = (
+        import_to_bitmagnet_with_hint(settings, parsed, content_type, content_source, content_id)
+        if action in {"index", "both"}
+        else None
+    )
+    qbittorrent = send_to_qbittorrent(settings, parsed) if action in {"download", "both"} else None
+    submission = Submission(
+        timestamp=now_iso(),
+        action=action,
+        content_type=content_type,
+        content_source=content_source,
+        content_id=content_id,
+        info_hash=parsed.info_hash,
+        name=parsed.name,
+        bitmagnet=bitmagnet,
+        qbittorrent=qbittorrent,
+    )
+    recent.add(submission)
+    ok = all(result.ok for result in [bitmagnet, qbittorrent] if result is not None)
+    return (200 if ok else 502), submission_to_dict(submission)
+
+
+@app.get("/", response_class=HTMLResponse)
+def index() -> str:
+    return render_page(settings, recent_submissions.list())
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "up"}
+
+
+@app.get("/readyz")
+def readyz() -> JSONResponse:
+    downstream = ready(settings)
+    status = 200 if all(item.ok for item in downstream.values()) else 503
+    return JSONResponse({k: asdict(v) for k, v in downstream.items()}, status_code=status)
+
+
+@app.get("/api/intake/recent")
+def recent() -> list[dict[str, Any]]:
+    return [submission_to_dict(item) for item in recent_submissions.list()]
+
+
+@app.post("/api/intake/magnet")
+def intake_magnet(payload: IntakeRequest) -> JSONResponse:
+    status, body = submit_intake(
+        settings,
+        recent_submissions,
+        payload.magnet,
+        payload.action,
+        payload.contentType,
+        payload.contentSource,
+        payload.contentId,
+    )
+    return JSONResponse(body, status_code=status)
+
+
+@app.post("/submit", response_class=HTMLResponse)
+def submit_form(
+    magnet: str = Form(...),
+    action: str = Form("index"),
+    contentType: str = Form("tv_show"),
+    contentSource: str = Form(""),
+    contentId: str = Form(""),
+) -> HTMLResponse:
+    status, body = submit_intake(
+        settings,
+        recent_submissions,
+        magnet,
+        action,
+        contentType,
+        contentSource,
+        contentId,
+    )
+    notice = body.get("error") or f"Submitted {body['infoHash']}"
+    return HTMLResponse(render_page(settings, recent_submissions.list(), notice), status_code=status)
 
 
 def render_page(settings: Settings, recent: list[Submission], notice: str = "") -> str:
@@ -348,133 +458,6 @@ def render_result(result: DownstreamResult | None) -> str:
     return f'<span class="{klass}">{status}</span> {html.escape(result.message[:120])}'
 
 
-class Handler(BaseHTTPRequestHandler):
-    settings: Settings
-    recent: RecentSubmissions
-
-    def log_message(self, fmt: str, *args: object) -> None:
-        print(f"{self.address_string()} - {fmt % args}", flush=True)
-
-    def do_GET(self) -> None:
-        if self.path == "/" or self.path.startswith("/?"):
-            self.respond_html(render_page(self.settings, self.recent.list()))
-            return
-        if self.path == "/healthz":
-            self.respond_json({"status": "up"})
-            return
-        if self.path == "/readyz":
-            downstream = ready(self.settings)
-            status = HTTPStatus.OK if all(item.ok for item in downstream.values()) else HTTPStatus.SERVICE_UNAVAILABLE
-            self.respond_json({k: asdict(v) for k, v in downstream.items()}, status=status)
-            return
-        if self.path == "/api/intake/recent":
-            self.respond_json([submission_to_dict(item) for item in self.recent.list()])
-            return
-        self.send_error(HTTPStatus.NOT_FOUND)
-
-    def do_POST(self) -> None:
-        if self.path == "/submit":
-            data = self.read_form()
-            status, payload = self.handle_submission(
-                data.get("magnet", ""),
-                data.get("action", self.settings.default_action),
-                data.get("contentType", "tv_show"),
-                data.get("contentSource", ""),
-                data.get("contentId", ""),
-            )
-            notice = payload.get("error") or f"Submitted {payload['infoHash']}"
-            self.respond_html(render_page(self.settings, self.recent.list(), notice), status=status)
-            return
-        if self.path == "/api/intake/magnet":
-            try:
-                data = json.loads(self.read_body().decode("utf-8"))
-            except json.JSONDecodeError:
-                self.respond_json({"error": "invalid JSON"}, status=HTTPStatus.BAD_REQUEST)
-                return
-            status, payload = self.handle_submission(
-                str(data.get("magnet", "")),
-                str(data.get("action", self.settings.default_action)),
-                str(data.get("contentType", "tv_show")),
-                str(data.get("contentSource", "")),
-                str(data.get("contentId", "")),
-            )
-            self.respond_json(payload, status=status)
-            return
-        self.send_error(HTTPStatus.NOT_FOUND)
-
-    def handle_submission(
-        self,
-        magnet: str,
-        action: str,
-        content_type: str = "tv_show",
-        content_source: str = "",
-        content_id: str = "",
-    ) -> tuple[HTTPStatus, dict[str, Any]]:
-        action = action.strip().lower()
-        if action not in VALID_ACTIONS:
-            return HTTPStatus.BAD_REQUEST, {"error": f"action must be one of {sorted(VALID_ACTIONS)}"}
-        content_type = normalize_content_type(content_type)
-        content_source = normalize_content_source(content_source)
-        content_id = normalize_content_id(content_id)
-        if content_id and not content_source:
-            return HTTPStatus.BAD_REQUEST, {"error": "contentSource is required when contentId is set"}
-        if content_source and not content_id:
-            return HTTPStatus.BAD_REQUEST, {"error": "contentId is required when contentSource is set"}
-        try:
-            parsed = parse_magnet(magnet)
-        except ValueError as exc:
-            return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
-
-        bitmagnet = (
-            import_to_bitmagnet_with_hint(self.settings, parsed, content_type, content_source, content_id)
-            if action in {"index", "both"}
-            else None
-        )
-        qbittorrent = send_to_qbittorrent(self.settings, parsed) if action in {"download", "both"} else None
-        submission = Submission(
-            timestamp=now_iso(),
-            action=action,
-            content_type=content_type,
-            content_source=content_source,
-            content_id=content_id,
-            info_hash=parsed.info_hash,
-            name=parsed.name,
-            bitmagnet=bitmagnet,
-            qbittorrent=qbittorrent,
-        )
-        self.recent.add(submission)
-        ok = all(result.ok for result in [bitmagnet, qbittorrent] if result is not None)
-        return (
-            HTTPStatus.OK if ok else HTTPStatus.BAD_GATEWAY,
-            submission_to_dict(submission),
-        )
-
-    def read_body(self) -> bytes:
-        length = int(self.headers.get("Content-Length", "0"))
-        return self.rfile.read(length)
-
-    def read_form(self) -> dict[str, str]:
-        body = self.read_body().decode("utf-8")
-        values = urllib.parse.parse_qs(body)
-        return {k: v[0] for k, v in values.items()}
-
-    def respond_html(self, body: str, status: HTTPStatus = HTTPStatus.OK) -> None:
-        payload = body.encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def respond_json(self, value: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
-        payload = json.dumps(value, default=asdict).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-
 def submission_to_dict(submission: Submission) -> dict[str, Any]:
     return {
         "timestamp": submission.timestamp,
@@ -490,12 +473,12 @@ def submission_to_dict(submission: Submission) -> dict[str, Any]:
 
 
 def main() -> None:
-    settings = Settings.from_env()
-    Handler.settings = settings
-    Handler.recent = RecentSubmissions()
-    server = ThreadingHTTPServer(("0.0.0.0", settings.port), Handler)
-    print(f"magnetron listening on :{settings.port}", flush=True)
-    server.serve_forever()
+    uvicorn.run(
+        "magnetron.app:app",
+        host="0.0.0.0",
+        port=settings.port,
+        proxy_headers=True,
+    )
 
 
 if __name__ == "__main__":

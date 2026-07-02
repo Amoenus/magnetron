@@ -6,3 +6,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+*.tar
+melange.rsa
+melange.rsa.pub
+packages/

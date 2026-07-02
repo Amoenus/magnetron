@@ -10,7 +10,7 @@ The app is intentionally boring:
 - No Kubernetes API access.
 - No secrets in files or Git.
 - Stateless, with bounded in-memory recent submission history.
-- Dependency-free at runtime.
+- FastAPI application managed with `uv`.
 
 ## Runtime API
 
@@ -55,15 +55,16 @@ paired fields for known external IDs; supported sources are `tmdb` and `imdb`.
 ## Local Development
 
 ```powershell
-python -m pip install -e .[dev]
-python -m pytest -q
-python -m magnetron.app
+uv sync
+uv run pytest -q
+uv run uvicorn magnetron.app:app --host 0.0.0.0 --port 8080
 ```
 
 ## OCI Image
 
-The GitHub Actions workflow builds source-to-OCI images with Cloud Native
-Buildpacks and publishes them to GHCR:
+The GitHub Actions workflow packages Magnetron as an APK with melange, builds a
+minimal Wolfi OCI image with apko, publishes it to GHCR, and signs published
+image tags with Sigstore Cosign keyless signing through GitHub OIDC:
 
 ```text
 ghcr.io/amoenus/magnetron:main
@@ -71,11 +72,22 @@ ghcr.io/amoenus/magnetron:<git-sha>
 ghcr.io/amoenus/magnetron:v0.1.0
 ```
 
-Build locally:
+Local OCI build prerequisites are Go, apko, melange, and uv:
 
 ```powershell
-pack build magnetron:dev --builder paketobuildpacks/builder-jammy-base --path .
-docker run --rm -p 8080:8080 -e PORT=8080 magnetron:dev
+go install chainguard.dev/melange@v0.56.0
+go install chainguard.dev/apko@v1.2.21
+melange keygen
+melange build melange.yaml --arch amd64 --signing-key melange.rsa
+apko build apko.yaml magnetron:dev magnetron.tar -k melange.rsa.pub
+```
+
+Verify a published signature:
+
+```powershell
+cosign verify ghcr.io/amoenus/magnetron:main `
+  --certificate-identity-regexp "https://github.com/Amoenus/magnetron/.github/workflows/oci-image.yaml@refs/heads/main" `
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 ## KCL Module
