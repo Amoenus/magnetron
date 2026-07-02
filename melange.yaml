@@ -37,6 +37,7 @@ pipeline:
       export UV_LINK_MODE=copy
       uv export --frozen --no-dev --format requirements-txt --output-file requirements.txt
       uv pip install --target "${app_home}/site" --compile-bytecode --requirement requirements.txt .
+      rm -f "${app_home}/site/.lock"
 
       cat > "${bin_dir}/magnetron" <<'EOF'
       #!/bin/sh
