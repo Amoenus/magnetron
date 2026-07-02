@@ -129,7 +129,7 @@ jobs:
         run: chmod 600 melange.rsa
 
       - name: Build Magnetron APK
-        run: melange build melange.yaml --arch "${{ matrix.melange_arch }}" --runner bubblewrap --signing-key melange.rsa
+        run: sudo "$(go env GOPATH)/bin/melange" build melange.yaml --arch "${{ matrix.melange_arch }}" --runner bubblewrap --signing-key melange.rsa
 
       - name: Upload APK package
         uses: actions/upload-artifact@v4
