@@ -54,12 +54,24 @@ jobs:
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index,manifest
         with:
           images: ghcr.io/amoenus/magnetron
           tags: |
             type=ref,event=branch
             type=ref,event=tag
             type=sha,format=short
+          labels: |
+            org.opencontainers.image.title=Magnetron
+            org.opencontainers.image.description=Small internal web UI and API for sending magnet links to bitmagnet and qBittorrent.
+            org.opencontainers.image.url=https://github.com/Amoenus/magnetron
+            org.opencontainers.image.documentation=https://github.com/Amoenus/magnetron#readme
+            org.opencontainers.image.source=https://github.com/Amoenus/magnetron
+            org.opencontainers.image.vendor=Amoenus
+            org.opencontainers.image.authors=Amoenus
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.base.name=docker.io/library/python:3.13-alpine
 
       - name: Build and optionally push image
         uses: docker/build-push-action@v6
@@ -69,3 +81,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name != 'pull_request' }}
