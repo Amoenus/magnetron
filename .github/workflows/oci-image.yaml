@@ -51,6 +51,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "stable"
+          cache: false
 
       - name: Install melange
         shell: bash
@@ -106,6 +107,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "stable"
+          cache: false
+
+      - name: Install Bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
 
       - name: Install melange
         shell: bash
@@ -124,7 +129,7 @@ jobs:
         run: chmod 600 melange.rsa
 
       - name: Build Magnetron APK
-        run: sudo "$(go env GOPATH)/bin/melange" build melange.yaml --arch "${{ matrix.melange_arch }}" --signing-key melange.rsa
+        run: melange build melange.yaml --arch "${{ matrix.melange_arch }}" --runner bubblewrap --signing-key melange.rsa
 
       - name: Upload APK package
         uses: actions/upload-artifact@v4
@@ -164,6 +169,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "stable"
+          cache: false
 
       - name: Install apko
         shell: bash
