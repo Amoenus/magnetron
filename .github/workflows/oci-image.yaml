@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
@@ -33,7 +33,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "stable"
           cache: false
@@ -64,7 +64,7 @@ jobs:
         run: melange keygen
 
       - name: Upload APK keypair
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: melange-keypair
           path: |
@@ -74,7 +74,7 @@ jobs:
           retention-days: 1
 
       - name: Upload APK public key
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: melange-public-key
           path: melange.rsa.pub
@@ -101,10 +101,10 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "stable"
           cache: false
@@ -120,7 +120,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
 
       - name: Download APK signing key
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: melange-keypair
           path: .
@@ -132,7 +132,7 @@ jobs:
         run: sudo "$(go env GOPATH)/bin/melange" build melange.yaml --arch "${{ matrix.melange_arch }}" --runner bubblewrap --signing-key melange.rsa
 
       - name: Upload APK package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: packages-${{ matrix.apk_arch }}
           path: packages/${{ matrix.apk_arch }}
@@ -144,10 +144,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download APK packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: packages-*
           path: packages
@@ -160,13 +160,13 @@ jobs:
           mv packages/packages-aarch64 packages/aarch64
 
       - name: Download APK public key
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: melange-public-key
           path: .
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "stable"
           cache: false
