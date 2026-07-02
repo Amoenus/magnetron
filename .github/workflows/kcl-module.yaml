@@ -5,11 +5,6 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
-    inputs:
-      module_tag:
-        description: KCL module tag to publish
-        required: true
-        default: v0.1.0
 
 permissions:
   contents: read
@@ -38,6 +33,4 @@ jobs:
         run: kcl registry login -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
 
       - name: Publish module
-        env:
-          MODULE_TAG: ${{ inputs.module_tag || github.ref_name }}
-        run: kcl mod push oci://ghcr.io/amoenus/magnetron-kcl --tag "$MODULE_TAG"
+        run: kcl mod push oci://ghcr.io/amoenus/magnetron-kcl
