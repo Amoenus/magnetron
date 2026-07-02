@@ -212,9 +212,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          : > image-refs.txt
           while IFS= read -r tag; do
-            apko publish apko.yaml "${tag}" -k melange.rsa.pub
+            apko publish apko.yaml "${tag}" -k melange.rsa.pub | tee apko-publish.log
+            grep -F "${IMAGE}@sha256:" apko-publish.log >> image-refs.txt
           done <<< "${{ steps.tags.outputs.tags }}"
+          sort -u image-refs.txt -o image-refs.txt
+          cat image-refs.txt
 
       - name: Install Cosign
         if: github.event_name != 'pull_request'
@@ -225,9 +229,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          while IFS= read -r tag; do
-            cosign sign --recursive --yes "${tag}"
-          done <<< "${{ steps.tags.outputs.tags }}"
+          while IFS= read -r ref; do
+            cosign sign --recursive --yes "${ref}"
+          done < image-refs.txt
 
       - name: Verify OCI image signatures
         if: github.event_name != 'pull_request'
@@ -235,8 +239,8 @@ jobs:
         run: |
           set -euo pipefail
           identity='https://github.com/Amoenus/magnetron/.github/workflows/oci-image.yaml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+)'
-          while IFS= read -r tag; do
-            cosign verify "${tag}" \
+          while IFS= read -r ref; do
+            cosign verify "${ref}" \
               --certificate-identity-regexp "${identity}" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          done <<< "${{ steps.tags.outputs.tags }}"
+          done < image-refs.txt
