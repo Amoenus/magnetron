@@ -76,3 +76,23 @@ Build locally:
 docker build -t magnetron:dev .
 docker run --rm -p 8080:8080 magnetron:dev
 ```
+
+## KCL Module
+
+The repository also publishes a small KCL module that exports the pinned
+runtime image coordinates for GitOps consumers:
+
+```kcl
+import magnetron.image
+
+image.repository
+image.tag
+image.digest
+image.ref
+```
+
+Published module:
+
+```text
+oci://ghcr.io/amoenus/magnetron-kcl:v0.1.0
+```
