@@ -53,9 +53,18 @@ jobs:
           image_repository="$(sed -n 's/^repository = "\(.*\)"/\1/p' image.k)"
           image_digest="$(sed -n 's/^digest = "\(.*\)"/\1/p' image.k)"
           image_ref="${image_repository}@${image_digest}"
+          image_tag="${image_repository}:${GITHUB_REF_NAME}"
           module_ref="oci://ghcr.io/amoenus/magnetron-kcl:${version}"
           notes="$(cat <<EOF
           ## OCI image
+
+          Human-readable tag:
+
+          \`\`\`text
+          ${image_tag}
+          \`\`\`
+
+          Immutable digest:
 
           \`\`\`text
           ${image_ref}
