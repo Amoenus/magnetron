@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Magnetron{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Manual intake</p>
+        <h1>Magnetron</h1>
+      </div>
+      <nav class="app-nav" aria-label="Primary">
+        <a class="status-link" href="/">Intake</a>
+        <a class="status-link" href="/settings">Settings</a>
+        <a class="status-link" href="/readyz">Readiness</a>
+      </nav>
+    </header>
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

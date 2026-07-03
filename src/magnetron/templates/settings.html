@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "macros/forms.html" import text_field %}
+
+{% block title %}Settings - Magnetron{% endblock %}
+
+{% block content %}
+  {% include "fragments/notice.html" %}
+
+  <section class="panel" aria-labelledby="settings-heading">
+    <div class="section-heading">
+      <div>
+        <h2 id="settings-heading">Settings</h2>
+        <p class="section-subtitle">Environment-provided values are locked. UI-managed values are persisted at {{ config_path }}.</p>
+      </div>
+    </div>
+
+    <form method="post" action="/settings" class="settings-form">
+      {% for field in config_fields %}
+      <div class="field config-field">
+        <label for="{{ field.name }}">{{ field.label }}</label>
+        {% if field.locked %}
+        <input id="{{ field.name }}" name="{{ field.name }}" value="{{ field.display_value }}" readonly>
+        <span class="metadata-line">Locked by {{ field.env_name }}</span>
+        {% elif field.sensitive %}
+        <input id="{{ field.name }}" name="{{ field.name }}" type="password" value="" placeholder="{% if field.value %}Leave blank to keep configured value{% else %}Not configured{% endif %}" autocomplete="off">
+        {% elif field.name == "default_action" %}
+        <select id="{{ field.name }}" name="{{ field.name }}">
+          {% for action in ["index", "download", "both"] %}
+          <option value="{{ action }}" {% if action == field.value %}selected{% endif %}>{{ action }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input id="{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}" autocomplete="off">
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      <div class="actions">
+        <button type="submit">Save settings</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

@@ -1,12 +1,17 @@
 .pytest_cache/
 .ruff_cache/
 .venv/
+node_modules/
 __pycache__/
 *.py[cod]
 build/
 dist/
+htmlcov/
+coverage/
+.coverage
 *.egg-info/
 *.tar
 melange.rsa
 melange.rsa.pub
 packages/
+npm-debug.log*

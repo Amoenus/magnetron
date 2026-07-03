@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Tailwind CLI source placeholder.
+
+  The checked-in app.css currently preserves the handcrafted design tokens and
+  components while the project transitions toward utility-first styling.
+  Run `npm run css:build` after converting component rules into Tailwind layers.
+*/
