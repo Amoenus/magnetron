@@ -228,8 +228,24 @@ jobs:
 
           sed -i -E "s/^(  org.opencontainers.image.version: ).*/\1${version}/" apko.yaml
           sed -i -E "s/^(  org.opencontainers.image.revision: ).*/\1${GITHUB_SHA}/" apko.yaml
-          sed -i -E "s/^(  MAGNETRON_VERSION: ).*/\1\"${runtime_version}\"/" apko.yaml
-          sed -i -E "s/^(  MAGNETRON_REVISION: ).*/\1${GITHUB_SHA}/" apko.yaml
+          RUNTIME_VERSION="${runtime_version}" python - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path("apko.yaml")
+          replacements = {
+              "  MAGNETRON_VERSION: ": f'"{os.environ["RUNTIME_VERSION"]}"',
+              "  MAGNETRON_REVISION: ": os.environ["GITHUB_SHA"],
+          }
+          output = []
+          for line in path.read_text(encoding="utf-8").splitlines():
+              for prefix, value in replacements.items():
+                  if line.startswith(prefix):
+                      line = f"{prefix}{value}"
+                      break
+              output.append(line)
+          path.write_text("\n".join(output) + "\n", encoding="utf-8")
+          PY
 
       - name: Build pull request image tar
         if: github.event_name == 'pull_request'
