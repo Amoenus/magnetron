@@ -107,5 +107,5 @@ image.ref
 Published module:
 
 ```text
-oci://ghcr.io/amoenus/magnetron-kcl:0.1.4
+oci://ghcr.io/amoenus/magnetron-kcl:0.1.5
 ```
