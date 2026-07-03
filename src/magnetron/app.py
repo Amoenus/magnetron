@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Literal
 
@@ -34,6 +35,9 @@ TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 STATIC_DIR = PACKAGE_DIR / "static"
 CONFIG_ENV = "MAGNETRON_CONFIG_PATH"
 HISTORY_CACHE_TTL_SECONDS = 15
+VERSION_CHECK_CACHE_TTL_SECONDS = 6 * 60 * 60
+DEFAULT_UPDATE_CHECK_URL = "https://api.github.com/repos/Amoenus/magnetron/releases/latest"
+SEMVER_TAG = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 CONFIGURABLE_FIELDS = {
     "bitmagnet_url": ("BITMAGNET_URL", "http://bitmagnet:3333", False, "bitmagnet URL"),
     "bitmagnet_source": ("BITMAGNET_SOURCE", "manual-web", False, "bitmagnet import source"),
@@ -200,8 +204,26 @@ class ConfigField:
     display_value: str
 
 
+@dataclass(frozen=True)
+class AppVersion:
+    version: str
+    revision: str
+    display: str
+
+
+@dataclass(frozen=True)
+class VersionCheck:
+    current: str
+    latest: str
+    latest_url: str
+    update_available: bool
+    error: str = ""
+
+
 history_cache_lock = threading.Lock()
 history_cache: dict[tuple[Settings, int], tuple[float, list[HistoryItem]]] = {}
+version_check_lock = threading.Lock()
+version_check_cache: tuple[float, VersionCheck] | None = None
 
 
 def config_path() -> Path:
@@ -234,6 +256,67 @@ def save_ui_config(path: Path, values: dict[str, str]) -> None:
         os.chmod(path, 0o600)
     except OSError:
         pass
+
+
+def app_version() -> AppVersion:
+    version = os.getenv("MAGNETRON_VERSION", "").strip()
+    if not version:
+        try:
+            version = metadata.version("magnetron")
+        except metadata.PackageNotFoundError:
+            version = "0.0.0"
+    revision = os.getenv("MAGNETRON_REVISION", "").strip()
+    short_revision = revision[:7] if revision and revision != "unknown" else ""
+    display = version
+    if short_revision:
+        display = f"{version} ({short_revision})"
+    return AppVersion(version=version, revision=revision, display=display)
+
+
+def parse_semver(value: str) -> tuple[int, int, int] | None:
+    match = SEMVER_TAG.match(value.strip())
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def latest_release_check(current: AppVersion | None = None) -> VersionCheck:
+    global version_check_cache
+    current = current or app_version()
+    check_url = os.getenv("MAGNETRON_UPDATE_CHECK_URL", DEFAULT_UPDATE_CHECK_URL).strip()
+    if not check_url:
+        return VersionCheck(current.version, "", "", False, "update checks disabled")
+
+    now = time.monotonic()
+    with version_check_lock:
+        if version_check_cache and now - version_check_cache[0] < VERSION_CHECK_CACHE_TTL_SECONDS:
+            return version_check_cache[1]
+
+    try:
+        validate_http_url(check_url)
+        req = urllib.request.Request(check_url, headers={"Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            payload = json.loads(response.read(4096).decode("utf-8"))
+        latest = str(payload.get("tag_name") or "").strip()
+        latest_url = str(payload.get("html_url") or "").strip()
+        current_semver = parse_semver(current.version)
+        latest_semver = parse_semver(latest)
+        update_available = bool(current_semver and latest_semver and latest_semver > current_semver)
+        result = VersionCheck(current.version, latest, latest_url, update_available)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        result = VersionCheck(current.version, "", "", False, str(exc))
+
+    with version_check_lock:
+        version_check_cache = (time.monotonic(), result)
+    return result
+
+
+def app_context() -> dict[str, Any]:
+    version = app_version()
+    return {
+        "app_version": version,
+        "version_check": latest_release_check(version),
+    }
 
 
 class IntakeRequest(BaseModel):
@@ -660,6 +743,21 @@ def recent() -> list[dict[str, Any]]:
     return [history_item_to_dict(item) for item in history.items]
 
 
+@app.get("/api/version")
+def version() -> dict[str, Any]:
+    version = app_version()
+    check = latest_release_check(version)
+    return {
+        "version": version.version,
+        "revision": version.revision,
+        "display": version.display,
+        "latest": check.latest,
+        "latestUrl": check.latest_url,
+        "updateAvailable": check.update_available,
+        "updateCheckError": check.error,
+    }
+
+
 @app.get("/fragments/recent-submissions", response_class=HTMLResponse)
 def recent_submissions_fragment(request: Request) -> HTMLResponse:
     history = submission_history(current_settings(), recent_submissions)
@@ -711,6 +809,7 @@ def settings_page(request: Request) -> HTMLResponse:
         request,
         "settings.html",
         {
+            **app_context(),
             "config_fields": config_fields(active_settings),
             "config_path": str(config_path()),
             "notice": "",
@@ -745,6 +844,7 @@ def save_settings_page(
         request,
         "settings.html",
         {
+            **app_context(),
             "config_fields": config_fields(active_settings),
             "config_path": str(config_path()),
             "notice": "Settings saved",
@@ -764,6 +864,7 @@ def render_page(
         request,
         "index.html",
         {
+            **app_context(),
             "actions": ["index", "download", "both"],
             "content_sources": [
                 {"value": "", "label": "None"},

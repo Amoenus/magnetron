@@ -150,6 +150,14 @@ class ApiTests(unittest.TestCase):
             app.recent_submissions._items.clear()
         with app.history_cache_lock:
             app.history_cache.clear()
+        with app.version_check_lock:
+            app.version_check_cache = None
+        self.env_patch = mock.patch.dict(
+            app.os.environ,
+            {"MAGNETRON_UPDATE_CHECK_URL": "", "MAGNETRON_VERSION": "test", "MAGNETRON_REVISION": "abcdef123456"},
+        )
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
 
     def test_healthz(self):
         client = TestClient(app.app)
@@ -166,7 +174,8 @@ class ApiTests(unittest.TestCase):
             response = client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('href="http://testserver/static/app.css"', response.text)
+        self.assertIn('href="/static/app.css"', response.text)
+        self.assertIn("Magnetron test (abcdef1)", response.text)
         self.assertIn("Submit magnet", response.text)
         self.assertIn("No submissions yet.", response.text)
         self.assertIn("hx-get", response.text)
@@ -179,6 +188,62 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("--color-surface-page", response.text)
         self.assertIn("--space-4", response.text)
+
+    def test_version_endpoint_reports_runtime_version(self):
+        client = TestClient(app.app)
+
+        response = client.get("/api/version")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["version"], "test")
+        self.assertEqual(response.json()["revision"], "abcdef123456")
+        self.assertEqual(response.json()["display"], "test (abcdef1)")
+        self.assertFalse(response.json()["updateAvailable"])
+
+    def test_latest_release_check_detects_semver_update(self):
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, _limit=-1):
+                return b'{"tag_name":"v1.2.3","html_url":"https://github.com/Amoenus/magnetron/releases/tag/v1.2.3"}'
+
+        with app.version_check_lock:
+            app.version_check_cache = None
+        with mock.patch.dict(app.os.environ, {"MAGNETRON_UPDATE_CHECK_URL": "https://example.test/latest"}):
+            with mock.patch.object(app.urllib.request, "urlopen", return_value=Response()):
+                result = app.latest_release_check(app.AppVersion("1.2.2", "abc", "1.2.2 (abc)"))
+
+        self.assertTrue(result.update_available)
+        self.assertEqual(result.latest, "v1.2.3")
+        self.assertEqual(result.latest_url, "https://github.com/Amoenus/magnetron/releases/tag/v1.2.3")
+
+    def test_latest_release_check_does_not_mark_branch_build_outdated(self):
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, _limit=-1):
+                return b'{"tag_name":"v1.2.3","html_url":"https://github.com/Amoenus/magnetron/releases/tag/v1.2.3"}'
+
+        with app.version_check_lock:
+            app.version_check_cache = None
+        with mock.patch.dict(app.os.environ, {"MAGNETRON_UPDATE_CHECK_URL": "https://example.test/latest"}):
+            with mock.patch.object(app.urllib.request, "urlopen", return_value=Response()):
+                result = app.latest_release_check(app.AppVersion("main", "abcdef1", "main (abcdef1)"))
+
+        self.assertFalse(result.update_available)
+        self.assertEqual(result.latest, "v1.2.3")
 
     def test_magnet_intake_route(self):
         client = TestClient(app.app)

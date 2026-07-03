@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Magnetron{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  <link rel="stylesheet" href="/static/app.css">
   <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous" defer></script>
 </head>
 <body>
@@ -22,6 +22,13 @@
     </header>
 
     {% block content %}{% endblock %}
+
+    <footer class="app-footer">
+      <span>Magnetron {{ app_version.display }}</span>
+      {% if version_check.update_available and version_check.latest_url %}
+      <a href="{{ version_check.latest_url }}">Update available: {{ version_check.latest }}</a>
+      {% endif %}
+    </footer>
   </main>
 </body>
 </html>

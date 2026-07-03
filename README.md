@@ -54,6 +54,9 @@ paired fields for known external IDs; supported sources are `tmdb` and `imdb`.
 | `QBITTORRENT_TAGS` | `discord-intake` | qBittorrent tags. |
 | `DEFAULT_ACTION` | `index` | Default UI action. |
 | `MAGNETRON_CONFIG_PATH` | `$XDG_CONFIG_HOME/magnetron/config.json` or `~/.config/magnetron/config.json` | UI-managed settings file path. |
+| `MAGNETRON_VERSION` | installed package version | Runtime version shown in the UI and `/api/version`. |
+| `MAGNETRON_REVISION` | empty | Runtime source revision shown as a short commit in the UI and `/api/version`. |
+| `MAGNETRON_UPDATE_CHECK_URL` | GitHub latest release API URL | Release metadata endpoint used for update checks. Set to an empty string to disable. |
 
 Environment variables are authoritative. The settings UI can only edit fields
 that are not configured through environment variables. Sensitive values such as

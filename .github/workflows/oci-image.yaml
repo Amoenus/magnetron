@@ -216,16 +216,20 @@ jobs:
         run: |
           set -euo pipefail
           version="0.0.0"
+          runtime_version="${GITHUB_REF_NAME}"
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "Release tag must match vX.Y.Z: ${GITHUB_REF_NAME}" >&2
               exit 1
             fi
             version="${GITHUB_REF_NAME#v}"
+            runtime_version="${version}"
           fi
 
           sed -i -E "s/^(  org.opencontainers.image.version: ).*/\1${version}/" apko.yaml
           sed -i -E "s/^(  org.opencontainers.image.revision: ).*/\1${GITHUB_SHA}/" apko.yaml
+          sed -i -E "s/^(  MAGNETRON_VERSION: ).*/\1\"${runtime_version}\"/" apko.yaml
+          sed -i -E "s/^(  MAGNETRON_REVISION: ).*/\1${GITHUB_SHA}/" apko.yaml
 
       - name: Build pull request image tar
         if: github.event_name == 'pull_request'
