@@ -69,7 +69,6 @@ image tags with Sigstore Cosign keyless signing through GitHub OIDC:
 ```text
 ghcr.io/amoenus/magnetron:main
 ghcr.io/amoenus/magnetron:<git-sha>
-ghcr.io/amoenus/magnetron:v0.1.0
 ```
 
 Local OCI build prerequisites are Go, apko, melange, and uv:
@@ -109,3 +108,16 @@ Published module:
 ```text
 oci://ghcr.io/amoenus/magnetron-kcl:0.1.5
 ```
+
+## Releases
+
+After the image metadata in `image.k` and the KCL module version in `kcl.mod`
+are updated, push a matching SemVer tag to publish a release:
+
+```powershell
+git tag v0.1.5
+git push origin v0.1.5
+```
+
+Tag builds publish the KCL module and create a GitHub Release with the immutable
+image digest from `image.k` and the KCL module coordinates.

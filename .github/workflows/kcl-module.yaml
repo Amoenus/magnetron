@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -35,3 +35,42 @@ jobs:
 
       - name: Publish module
         run: kcl mod push oci://ghcr.io/amoenus/magnetron-kcl --force
+
+      - name: Create GitHub release
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          module_version="$(sed -n 's/^version = "\(.*\)"/\1/p' kcl.mod)"
+          if [[ "${version}" != "${module_version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match kcl.mod version ${module_version}" >&2
+            exit 1
+          fi
+
+          image_ref="$(sed -n 's/^ref = "\(.*\)"/\1/p' image.k)"
+          module_ref="oci://ghcr.io/amoenus/magnetron-kcl:${version}"
+          notes="$(cat <<EOF
+          ## OCI image
+
+          \`\`\`text
+          ${image_ref}
+          \`\`\`
+
+          ## KCL module
+
+          \`\`\`text
+          ${module_ref}
+          \`\`\`
+
+          Published images are signed with Sigstore Cosign keyless signing.
+          EOF
+          )"
+
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --title "Magnetron ${GITHUB_REF_NAME}" \
+            --notes "${notes}" \
+            --generate-notes
