@@ -59,7 +59,7 @@
           <span class="metadata-line">S/L: {{ item.seeders }}/{{ item.leechers }}</span>
         </td>
         <td>
-          <a class="row-action" href="/?editInfoHash={{ item.info_hash }}#submit-heading">Edit</a>
+          <a class="row-action" href="/?editInfoHash={{ item.info_hash | urlencode }}#submit-heading">Edit</a>
         </td>
       </tr>
       {% else %}

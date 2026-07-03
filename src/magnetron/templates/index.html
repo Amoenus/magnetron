@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros/forms.html" import select_field %}
+{% from "macros/forms.html" import select_field, text_field %}
 
 {% block content %}
   {% include "fragments/notice.html" %}
@@ -26,10 +26,7 @@
       {{ select_field("contentType", "Content type", content_types, form_values.contentType) }}
       {{ select_field("contentSource", "Known ID source", content_sources, form_values.contentSource) }}
 
-      <div class="field">
-        <label for="contentId">Known ID</label>
-        <input id="contentId" name="contentId" value="{{ form_values.contentId }}" placeholder="89180 or tt1234567" autocomplete="off">
-      </div>
+      {{ text_field("contentId", "Known ID", form_values.contentId, "89180 or tt1234567") }}
 
       <div class="actions">
         <button type="submit">{% if edit_item %}Resubmit{% else %}Submit{% endif %}</button>

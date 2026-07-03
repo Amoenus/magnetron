@@ -145,6 +145,12 @@ class DownstreamTests(unittest.TestCase):
 
 
 class ApiTests(unittest.TestCase):
+    def setUp(self):
+        with app.recent_submissions._lock:
+            app.recent_submissions._items.clear()
+        with app.history_cache_lock:
+            app.history_cache.clear()
+
     def test_healthz(self):
         client = TestClient(app.app)
 
@@ -343,6 +349,114 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(settings.bitmagnet_url, "http://env-bitmagnet:3333")
             self.assertEqual(settings.bitmagnet_source, "manual-web-ui")
             self.assertEqual(settings.default_action, "both")
+
+    def test_load_ui_config_ignores_non_object_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.json"
+            path.write_text('["not", "a", "mapping"]')
+
+            self.assertEqual(app.load_ui_config(path), {})
+
+    def test_request_rejects_non_http_schemes(self):
+        result = app.request("GET", "file:///etc/hosts")
+
+        self.assertFalse(result.ok)
+        self.assertIn("unsupported URL scheme", result.message)
+
+    def test_request_json_rejects_non_http_schemes(self):
+        with self.assertRaises(ValueError):
+            app.request_json("POST", "file:///etc/hosts", {})
+
+    def test_submission_history_uses_cache_and_sorts_local_items_by_recency(self):
+        settings = app.Settings(
+            port=8080,
+            base_url="http://localhost:8080",
+            bitmagnet_url="http://bitmagnet:3333",
+            bitmagnet_source="manual-web",
+            qbittorrent_url="http://qbittorrent:8080",
+            qbittorrent_api_key="",
+            qbittorrent_category="discord-intake",
+            qbittorrent_tags="discord-intake",
+            default_action="index",
+        )
+        bitmagnet_item = app.HistoryItem(
+            timestamp="2026-01-01T00:00:00Z",
+            action="indexed",
+            content_type="movie",
+            content_source="tmdb",
+            content_id="550",
+            magnet="magnet:?xt=urn:btih:1111111111111111111111111111111111111111",
+            info_hash="1111111111111111111111111111111111111111",
+            name="Old bitmagnet item",
+            discovered_title="Old",
+            discovered_source="TMDB",
+            discovered_id="550",
+            release_year="1999",
+            video_summary="",
+            seeders=None,
+            leechers=None,
+            bitmagnet=None,
+            qbittorrent=None,
+            source="bitmagnet",
+        )
+        local_recent = app.RecentSubmissions()
+        local_recent.add(
+            app.Submission(
+                timestamp="2026-01-02T00:00:00Z",
+                action="download",
+                content_type="movie",
+                content_source="tmdb",
+                content_id="551",
+                magnet="magnet:?xt=urn:btih:2222222222222222222222222222222222222222",
+                info_hash="2222222222222222222222222222222222222222",
+                name="New local item",
+                bitmagnet=None,
+                qbittorrent=None,
+            )
+        )
+
+        with mock.patch.object(app, "query_bitmagnet_history", return_value=[bitmagnet_item]) as query:
+            first = app.submission_history(settings, local_recent)
+            second = app.submission_history(settings, local_recent)
+
+        self.assertEqual(query.call_count, 1)
+        self.assertEqual(first.items[0].info_hash, "2222222222222222222222222222222222222222")
+        self.assertEqual(second.items[0].info_hash, "2222222222222222222222222222222222222222")
+
+    def test_edit_form_prefers_valid_history_action(self):
+        settings = app.Settings(
+            port=8080,
+            base_url="http://localhost:8080",
+            bitmagnet_url="http://bitmagnet:3333",
+            bitmagnet_source="manual-web",
+            qbittorrent_url="http://qbittorrent:8080",
+            qbittorrent_api_key="",
+            qbittorrent_category="discord-intake",
+            qbittorrent_tags="discord-intake",
+            default_action="index",
+        )
+        item = app.HistoryItem(
+            timestamp="2026-01-02T00:00:00Z",
+            action="download",
+            content_type="movie",
+            content_source="tmdb",
+            content_id="551",
+            magnet="magnet:?xt=urn:btih:2222222222222222222222222222222222222222",
+            info_hash="2222222222222222222222222222222222222222",
+            name="New local item",
+            discovered_title="",
+            discovered_source="",
+            discovered_id="",
+            release_year="",
+            video_summary="",
+            seeders=None,
+            leechers=None,
+            bitmagnet=None,
+            qbittorrent=None,
+            source="local",
+        )
+
+        self.assertEqual(app.form_values(settings, item)["action"], "download")
 
     def test_settings_page_locks_env_configured_fields(self):
         client = TestClient(app.app)

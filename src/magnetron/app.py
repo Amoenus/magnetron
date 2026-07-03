@@ -6,6 +6,7 @@ import json
 import os
 import re
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -32,6 +33,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 STATIC_DIR = PACKAGE_DIR / "static"
 CONFIG_ENV = "MAGNETRON_CONFIG_PATH"
+HISTORY_CACHE_TTL_SECONDS = 15
 CONFIGURABLE_FIELDS = {
     "bitmagnet_url": ("BITMAGNET_URL", "http://bitmagnet:3333", False, "bitmagnet URL"),
     "bitmagnet_source": ("BITMAGNET_SOURCE", "manual-web", False, "bitmagnet import source"),
@@ -198,6 +200,10 @@ class ConfigField:
     display_value: str
 
 
+history_cache_lock = threading.Lock()
+history_cache: dict[tuple[Settings, int], tuple[float, list[HistoryItem]]] = {}
+
+
 def config_path() -> Path:
     configured = os.getenv(CONFIG_ENV)
     if configured:
@@ -214,6 +220,8 @@ def load_ui_config(path: Path) -> dict[str, str]:
             raw = json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
+    if not isinstance(raw, dict):
+        return {}
     return {k: str(v) for k, v in raw.items() if k in CONFIGURABLE_FIELDS}
 
 
@@ -222,6 +230,10 @@ def save_ui_config(path: Path, values: dict[str, str]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         json.dump(values, handle, indent=2, sort_keys=True)
         handle.write("\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
 
 class IntakeRequest(BaseModel):
@@ -292,7 +304,7 @@ def update_persisted_config(form_values: dict[str, str], env: os._Environ[str] |
         raw_value = form_values.get(name, "")
         if sensitive and raw_value == "":
             continue
-        value = raw_value.strip() if name != "qbittorrent_api_key" else raw_value
+        value = raw_value if sensitive else raw_value.strip()
         if name == "default_action" and value not in VALID_ACTIONS:
             value = default
         persisted[name] = value
@@ -331,6 +343,12 @@ def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def validate_http_url(url: str) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"unsupported URL scheme {parsed.scheme or '(empty)'}; expected http or https")
+
+
 def request(
     method: str,
     url: str,
@@ -339,8 +357,9 @@ def request(
     headers: dict[str, str] | None = None,
     timeout: int = 15,
 ) -> DownstreamResult:
-    req = urllib.request.Request(url, data=body, method=method, headers=headers or {})
     try:
+        validate_http_url(url)
+        req = urllib.request.Request(url, data=body, method=method, headers=headers or {})
         with urllib.request.urlopen(req, timeout=timeout) as response:
             payload = response.read(500).decode("utf-8", errors="replace")
             message = payload.strip() or response.reason
@@ -348,11 +367,12 @@ def request(
     except urllib.error.HTTPError as exc:
         payload = exc.read(500).decode("utf-8", errors="replace")
         return DownstreamResult(False, exc.code, payload.strip() or exc.reason)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         return DownstreamResult(False, None, str(exc))
 
 
 def request_json(method: str, url: str, body: dict[str, Any], timeout: int = 15) -> dict[str, Any]:
+    validate_http_url(url)
     payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -475,6 +495,20 @@ def query_bitmagnet_history(settings: Settings, limit: int = 50) -> list[History
     return [history_item_from_bitmagnet(item) for item in items]
 
 
+def cached_bitmagnet_history(settings: Settings, limit: int = 50) -> list[HistoryItem]:
+    key = (settings, limit)
+    now = time.monotonic()
+    with history_cache_lock:
+        cached = history_cache.get(key)
+        if cached and now - cached[0] < HISTORY_CACHE_TTL_SECONDS:
+            return list(cached[1])
+
+    items = query_bitmagnet_history(settings, limit)
+    with history_cache_lock:
+        history_cache[key] = (time.monotonic(), list(items))
+    return items
+
+
 def history_item_from_bitmagnet(item: dict[str, Any]) -> HistoryItem:
     torrent = item.get("torrent") or {}
     content = item.get("content") or {}
@@ -535,12 +569,13 @@ def history_item_from_submission(submission: Submission) -> HistoryItem:
 def submission_history(settings: Settings, recent: RecentSubmissions) -> HistoryResult:
     local_items = [history_item_from_submission(item) for item in recent.list()]
     try:
-        bitmagnet_items = query_bitmagnet_history(settings)
+        bitmagnet_items = cached_bitmagnet_history(settings)
     except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
         return HistoryResult(local_items, "local fallback", f"bitmagnet history unavailable: {exc}")
 
     seen = {item.info_hash for item in bitmagnet_items}
     merged = bitmagnet_items + [item for item in local_items if item.info_hash not in seen]
+    merged.sort(key=lambda item: item.timestamp, reverse=True)
     return HistoryResult(merged, "bitmagnet")
 
 
@@ -778,9 +813,10 @@ def form_values(settings: Settings, edit_item: HistoryItem | None = None) -> dic
             "contentSource": "",
             "contentId": "",
         }
+    action = edit_item.action if edit_item.action in VALID_ACTIONS else settings.default_action
     return {
         "magnet": edit_item.magnet,
-        "action": settings.default_action,
+        "action": action,
         "contentType": edit_item.content_type or "tv_show",
         "contentSource": edit_item.content_source,
         "contentId": edit_item.content_id,
