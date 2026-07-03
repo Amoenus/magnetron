@@ -8,7 +8,7 @@ package:
   dependencies:
     runtime:
       - ca-certificates-bundle
-      - python-3.13
+      - nodejs-24
 
 environment:
   contents:
@@ -20,9 +20,8 @@ environment:
     packages:
       - busybox
       - ca-certificates-bundle
-      - python-3.13
-      - py3-pip
-      - uv
+      - nodejs-24
+      - npm
 
 pipeline:
   - name: Install Magnetron application
@@ -31,18 +30,22 @@ pipeline:
       bin_dir="${{targets.destdir}}/usr/bin"
 
       mkdir -p "${app_home}" "${bin_dir}"
-      cp -R src pyproject.toml uv.lock README.md LICENSE "${app_home}/"
 
-      cd "${app_home}"
-      export UV_LINK_MODE=copy
-      uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file requirements.txt
-      uv pip install --target "${app_home}/site" --compile-bytecode --requirement requirements.txt
-      uv pip install --target "${app_home}/site" --compile-bytecode --no-deps .
-      rm -f "${app_home}/site/.lock"
+      export NEXT_TELEMETRY_DISABLED=1
+      export SKIP_ENV_VALIDATION=1
+      npm ci
+      npm run build
+
+      cp -R .next/standalone/. "${app_home}/"
+      mkdir -p "${app_home}/.next"
+      cp -R .next/static "${app_home}/.next/static"
+      cp -R public "${app_home}/public"
+      cp README.md LICENSE package.json "${app_home}/"
 
       cat > "${bin_dir}/magnetron" <<'EOF'
       #!/bin/sh
-      export PYTHONPATH="/usr/share/magnetron/site${PYTHONPATH:+:${PYTHONPATH}}"
-      exec /usr/bin/python3.13 -m uvicorn magnetron.app:app --host 0.0.0.0 --port "${PORT:-8080}"
+      export HOSTNAME="${HOSTNAME:-0.0.0.0}"
+      export PORT="${PORT:-8080}"
+      exec /usr/bin/node /usr/share/magnetron/server.js
       EOF
       chmod +x "${bin_dir}/magnetron"

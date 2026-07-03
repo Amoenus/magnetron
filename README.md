@@ -1,119 +1,66 @@
 # Magnetron
 
-Magnetron is a small web UI and JSON API for manually sending selected magnet
-links into a media stack. It can index a magnet in bitmagnet, submit it to
-qBittorrent, or do both in one request.
+Magnetron is a personal manual intake console for selected magnet links. It
+submits a magnet to bitmagnet, qBittorrent, or both, then shows only what can be
+read back from bitmagnet catalog history.
 
-The app is intentionally boring:
+This version is a T3 rewrite:
 
-- Configured only by environment variables.
-- No Kubernetes API access.
-- No secrets in files or Git.
-- Stateless, with bounded in-memory recent submission history.
-- FastAPI application managed with `uv`.
+- Next.js App Router
+- TypeScript
+- tRPC
+- Tailwind CSS v4
+- shadcn/ui with Radix primitives
+- React Hook Form + Zod for in-place validation
 
-## Runtime API
+## Why The Pivot
 
-```text
-GET  /healthz
-GET  /readyz
-GET  /api/intake/recent
-POST /api/intake/magnet
-GET  /settings
-POST /settings
-```
+The Python/FastAPI proof of concept proved the integration shape, but the UI was
+doing too much by hand. The T3 stack gives Magnetron typed server/client calls,
+strong environment validation, a modern component workflow, and a much better
+base for richer app interactions.
 
-`POST /api/intake/magnet` accepts:
+## Runtime Behavior
 
-```json
-{
-  "magnet": "magnet:?xt=urn:btih:...",
-  "action": "index",
-  "contentType": "tv_show",
-  "contentSource": "tmdb",
-  "contentId": "89180"
-}
-```
-
-`action` can be `index`, `download`, or `both`.
-`contentType` defaults to `tv_show`; use `movie` or `unknown` when the manual
-submission is not a TV episode. `contentSource` and `contentId` are optional
-paired fields for known external IDs; supported sources are `tmdb` and `imdb`.
+- Submissions call downstream services directly.
+- Catalog rows come only from bitmagnet GraphQL history.
+- If bitmagnet history is unavailable, Magnetron shows an unavailable state and
+  no local fallback rows.
+- Validation happens inline on field blur.
+- TMDB search is optional and enabled by `TMDB_API_KEY`.
+- qBittorrent API-key requests use `Authorization: Bearer <key>`.
 
 ## Environment
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PORT` | `8080` | HTTP listen port. |
-| `BASE_URL` | `http://localhost:8080` | UI base URL. |
+| `PORT` | `3000` locally, `8080` in the OCI image | Next.js listen port. |
 | `BITMAGNET_URL` | `http://bitmagnet:3333` | bitmagnet base URL. |
-| `BITMAGNET_SOURCE` | `manual-web` | bitmagnet source label. |
+| `BITMAGNET_SOURCE` | `manual-web` | bitmagnet import source and history filter. |
 | `QBITTORRENT_URL` | `http://qbittorrent:8080` | qBittorrent base URL. |
-| `QBITTORRENT_API_KEY` | empty | qBittorrent API key for download mode. |
+| `QBITTORRENT_API_KEY` | empty | API key for download mode. |
 | `QBITTORRENT_CATEGORY` | `discord-intake` | qBittorrent category. |
 | `QBITTORRENT_TAGS` | `discord-intake` | qBittorrent tags. |
-| `DEFAULT_ACTION` | `index` | Default UI action. |
-| `MAGNETRON_CONFIG_PATH` | `$XDG_CONFIG_HOME/magnetron/config.json` or `~/.config/magnetron/config.json` | UI-managed settings file path. |
-| `MAGNETRON_VERSION` | installed package version | Runtime version shown in the UI and `/api/version`. |
-| `MAGNETRON_REVISION` | empty | Runtime source revision shown as a short commit in the UI and `/api/version`. |
-| `MAGNETRON_UPDATE_CHECK_URL` | GitHub latest release API URL | Release metadata endpoint used for update checks. Set to an empty string to disable. |
-
-Environment variables are authoritative. The settings UI can only edit fields
-that are not configured through environment variables. Sensitive values such as
-`QBITTORRENT_API_KEY` are masked in the UI and preserved when the settings form
-is saved with the password field left blank.
-
-## UI Architecture
-
-The UI remains server-rendered with FastAPI and Jinja2. Templates are split into
-a base layout, reusable form macros, and fragments. HTMX is used for small
-partial updates, such as refreshing the recent submissions table, while standard
-synchronous form submission remains the fallback path.
-
-Recent submission history is sourced from bitmagnet through its GraphQL API when
-available, filtered by the configured `BITMAGNET_SOURCE`. The in-memory local
-history is retained as a short-lived fallback for just-submitted items and for
-cases where bitmagnet history is temporarily unavailable. The normalized history
-view includes bitmagnet-discovered metadata when available.
+| `TMDB_API_KEY` | empty | Optional TMDB API key or read token for title search. |
+| `DEFAULT_ACTION` | `index` | Default intake action: `index`, `download`, or `both`. |
 
 ## Local Development
 
 ```powershell
-uv sync
-uv run pytest -q
-uv run uvicorn magnetron.app:app --host 0.0.0.0 --port 8080
+npm install
+npm run dev
 ```
 
-Optional CSS toolchain:
+Open `http://localhost:3000`.
+
+Useful checks:
 
 ```powershell
-volta install node
-npm install
-npm run css:build
+npm run typecheck
+npm run build
 ```
 
-`src/magnetron/static/app.css` remains checked in and is served directly by
-FastAPI. The Tailwind CLI scaffold is intentionally minimal so the Python
-application does not require a frontend dev server. Node and npm versions are
-pinned through Volta in `package.json`.
-
-## OCI Image
-
-The GitHub Actions workflow packages Magnetron as an APK with melange, builds a
-minimal Wolfi OCI image with apko, publishes it to GHCR, and signs published
-image tags with Sigstore Cosign keyless signing through GitHub OIDC:
-
-```text
-ghcr.io/amoenus/magnetron:main
-ghcr.io/amoenus/magnetron:sha-<short-sha>
-ghcr.io/amoenus/magnetron:vX.Y.Z
-```
-
-Release image tags are convenience references. For reproducible deployments,
-prefer the immutable digest shown in the GitHub Release and exported by the KCL
-module.
-
-Local OCI build prerequisites are Go, apko, melange, and uv:
+## Hardened OCI Image
 
 ```powershell
 go install chainguard.dev/melange@v0.56.0
@@ -122,6 +69,12 @@ melange keygen
 melange build melange.yaml --arch amd64 --signing-key melange.rsa
 apko build apko.yaml magnetron:dev magnetron.tar -k melange.rsa.pub
 ```
+
+The release workflow keeps the original hardened supply-chain shape: melange
+packages Magnetron as an APK, apko builds a minimal Wolfi OCI image, the image
+runs as a nonroot user, and published images are signed with Sigstore Cosign.
+The runtime payload is now Next.js standalone output executed by Wolfi
+`nodejs-24`, not Python.
 
 Verify a published signature:
 
@@ -133,8 +86,8 @@ cosign verify ghcr.io/amoenus/magnetron:main `
 
 ## KCL Module
 
-The repository also publishes a KCL module that exports the pinned runtime
-image coordinates and minimal Kubernetes Resource Model manifests for GitOps
+The repository still publishes a KCL module that exports pinned runtime image
+coordinates and minimal Kubernetes Resource Model manifests for GitOps
 consumers:
 
 ```kcl
@@ -146,35 +99,25 @@ image.digest
 image.ref
 ```
 
-Published module:
-
-```text
-oci://ghcr.io/amoenus/magnetron-kcl:latest
-oci://ghcr.io/amoenus/magnetron-kcl:X.Y.Z
-```
-
-Use `latest` for quick evaluation. Use the `X.Y.Z` module tag for reproducible
-GitOps inputs. The generated Kubernetes deployment uses `image.ref`, so the
-runtime image remains digest-pinned.
-
 Render the default Kubernetes manifests:
 
 ```powershell
 kcl run kubernetes.k
 ```
 
-## Releases
+## Notes For Future Agents
 
-Release versions come from Git tags. Use `vX.Y.Z` for GitHub releases and OCI
-image tags; package and module metadata use the plain `X.Y.Z` value derived from
-the tag.
+The T3 scaffold was created with:
 
 ```powershell
-git tag vX.Y.Z
-git push origin vX.Y.Z
+npm create t3-app@latest -- C:\Git\_magnetron_t3_scaffold --CI --trpc --tailwind --appRouter --noGit --noInstall
 ```
 
-Tag builds inject the derived version into release artifacts, publish and sign
-the OCI image, publish the KCL module as both `X.Y.Z` and `latest`, and create a
-GitHub Release that documents the human-readable image tag, immutable image
-digest, and KCL module references.
+shadcn/ui was initialized with Radix primitives:
+
+```powershell
+npx shadcn@latest init --defaults --base radix --yes --pointer
+```
+
+Use `npx shadcn@latest info` and `npx shadcn@latest docs <component>` before
+adding or heavily changing UI primitives.

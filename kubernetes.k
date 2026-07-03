@@ -42,11 +42,16 @@ items = [
                         runAsNonRoot = True
                         runAsUser = 65532
                         runAsGroup = 65532
+                        seccompProfile.type = "RuntimeDefault"
                     }
                     containers = [
                         {
                             name = _name
                             image = image.ref
+                            securityContext = {
+                                allowPrivilegeEscalation = False
+                                capabilities.drop = ["ALL"]
+                            }
                             ports = [
                                 {
                                     name = "http"

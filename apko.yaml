@@ -27,6 +27,7 @@ entrypoint:
 environment:
   PATH: /usr/sbin:/sbin:/usr/bin:/bin
   PORT: "8080"
+  HOSTNAME: "0.0.0.0"
   MAGNETRON_VERSION: "0.0.0"
   MAGNETRON_REVISION: unknown
 
