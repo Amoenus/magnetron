@@ -1,4 +1,4 @@
 repository = "ghcr.io/amoenus/magnetron"
 tag = "main"
-digest = "sha256:2886b516844a11cdb25a3917724619035de3beb8b6dc590c801f8b160a5043ad"
+digest = "sha256:b7ab99dfa761b6f00e92bd4b5344005c714c83b242c7552bc7b04d0dbf67a486"
 ref = "${repository}@${digest}"
