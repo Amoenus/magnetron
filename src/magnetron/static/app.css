@@ -143,6 +143,29 @@
     text-decoration: none;
   }
 
+  .app-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .section-heading,
+  .table-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: start;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .section-subtitle,
+  .metadata-line,
+  .muted {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-0);
+  }
+
   .notice {
     margin-block-end: var(--space-5);
     border-inline-start: 0.25rem solid var(--color-action);
@@ -150,6 +173,10 @@
     padding: var(--space-3) var(--space-4);
     background: var(--color-surface-raised);
     color: var(--color-text-primary);
+  }
+
+  .notice.warning {
+    border-inline-start-color: var(--color-danger);
   }
 
   .panel {
@@ -169,6 +196,16 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-4);
     margin-block-start: var(--space-4);
+  }
+
+  .settings-form {
+    display: grid;
+    gap: var(--space-4);
+    margin-block-start: var(--space-4);
+  }
+
+  .config-field {
+    max-width: 44rem;
   }
 
   .field {
@@ -215,8 +252,28 @@
     cursor: pointer;
   }
 
+  .secondary-button,
+  .row-action {
+    min-height: 2.25rem;
+    display: inline-flex;
+    align-items: center;
+    border: 0.0625rem solid var(--color-border-subtle);
+    border-radius: var(--radius-1);
+    padding-inline: var(--space-3);
+    background: var(--color-surface-panel);
+    color: var(--color-action);
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
   button:hover {
     background: var(--color-action-hover);
+  }
+
+  .secondary-button:hover,
+  .row-action:hover {
+    background: var(--color-surface-raised);
   }
 
   .table-wrap {
@@ -252,6 +309,17 @@
   }
 
   .result {
+    font-weight: 700;
+  }
+
+  .source-pill {
+    display: inline-flex;
+    margin-inline-start: var(--space-2);
+    border: 0.0625rem solid var(--color-border-subtle);
+    border-radius: 999px;
+    padding-inline: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-0);
     font-weight: 700;
   }
 

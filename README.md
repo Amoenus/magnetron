@@ -19,6 +19,8 @@ GET  /healthz
 GET  /readyz
 GET  /api/intake/recent
 POST /api/intake/magnet
+GET  /settings
+POST /settings
 ```
 
 `POST /api/intake/magnet` accepts:
@@ -51,6 +53,25 @@ paired fields for known external IDs; supported sources are `tmdb` and `imdb`.
 | `QBITTORRENT_CATEGORY` | `discord-intake` | qBittorrent category. |
 | `QBITTORRENT_TAGS` | `discord-intake` | qBittorrent tags. |
 | `DEFAULT_ACTION` | `index` | Default UI action. |
+| `MAGNETRON_CONFIG_PATH` | `$XDG_CONFIG_HOME/magnetron/config.json` or `~/.config/magnetron/config.json` | UI-managed settings file path. |
+
+Environment variables are authoritative. The settings UI can only edit fields
+that are not configured through environment variables. Sensitive values such as
+`QBITTORRENT_API_KEY` are masked in the UI and preserved when the settings form
+is saved with the password field left blank.
+
+## UI Architecture
+
+The UI remains server-rendered with FastAPI and Jinja2. Templates are split into
+a base layout, reusable form macros, and fragments. HTMX is used for small
+partial updates, such as refreshing the recent submissions table, while standard
+synchronous form submission remains the fallback path.
+
+Recent submission history is sourced from bitmagnet through its GraphQL API when
+available, filtered by the configured `BITMAGNET_SOURCE`. The in-memory local
+history is retained as a short-lived fallback for just-submitted items and for
+cases where bitmagnet history is temporarily unavailable. The normalized history
+view includes bitmagnet-discovered metadata when available.
 
 ## Local Development
 
@@ -59,6 +80,19 @@ uv sync
 uv run pytest -q
 uv run uvicorn magnetron.app:app --host 0.0.0.0 --port 8080
 ```
+
+Optional CSS toolchain:
+
+```powershell
+volta install node
+npm install
+npm run css:build
+```
+
+`src/magnetron/static/app.css` remains checked in and is served directly by
+FastAPI. The Tailwind CLI scaffold is intentionally minimal so the Python
+application does not require a frontend dev server. Node and npm versions are
+pinned through Volta in `package.json`.
 
 ## OCI Image
 
