@@ -102,8 +102,13 @@ image tags with Sigstore Cosign keyless signing through GitHub OIDC:
 
 ```text
 ghcr.io/amoenus/magnetron:main
-ghcr.io/amoenus/magnetron:<git-sha>
+ghcr.io/amoenus/magnetron:sha-<short-sha>
+ghcr.io/amoenus/magnetron:vX.Y.Z
 ```
+
+Release image tags are convenience references. For reproducible deployments,
+prefer the immutable digest shown in the GitHub Release and exported by the KCL
+module.
 
 Local OCI build prerequisites are Go, apko, melange, and uv:
 
@@ -125,8 +130,9 @@ cosign verify ghcr.io/amoenus/magnetron:main `
 
 ## KCL Module
 
-The repository also publishes a small KCL module that exports the pinned
-runtime image coordinates for GitOps consumers:
+The repository also publishes a KCL module that exports the pinned runtime
+image coordinates and minimal Kubernetes Resource Model manifests for GitOps
+consumers:
 
 ```kcl
 import magnetron.image
@@ -140,18 +146,32 @@ image.ref
 Published module:
 
 ```text
-oci://ghcr.io/amoenus/magnetron-kcl:0.1.5
+oci://ghcr.io/amoenus/magnetron-kcl:latest
+oci://ghcr.io/amoenus/magnetron-kcl:X.Y.Z
+```
+
+Use `latest` for quick evaluation. Use the `X.Y.Z` module tag for reproducible
+GitOps inputs. The generated Kubernetes deployment uses `image.ref`, so the
+runtime image remains digest-pinned.
+
+Render the default Kubernetes manifests:
+
+```powershell
+kcl run kubernetes.k
 ```
 
 ## Releases
 
-After the image metadata in `image.k` and the KCL module version in `kcl.mod`
-are updated, push a matching SemVer tag to publish a release:
+Release versions come from Git tags. Use `vX.Y.Z` for GitHub releases and OCI
+image tags; package and module metadata use the plain `X.Y.Z` value derived from
+the tag.
 
 ```powershell
-git tag v0.1.5
-git push origin v0.1.5
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
-Tag builds publish the KCL module and create a GitHub Release with the immutable
-image digest from `image.k` and the KCL module coordinates.
+Tag builds inject the derived version into release artifacts, publish and sign
+the OCI image, publish the KCL module as both `X.Y.Z` and `latest`, and create a
+GitHub Release that documents the human-readable image tag, immutable image
+digest, and KCL module references.

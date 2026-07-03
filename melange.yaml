@@ -1,6 +1,6 @@
 package:
   name: magnetron
-  version: 0.1.0
+  version: 0.0.0
   epoch: 0
   description: Small internal web UI and API for sending magnet links to bitmagnet and qBittorrent.
   copyright:

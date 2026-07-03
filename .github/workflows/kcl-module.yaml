@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing release tag to retag, for example v0.1.6."
+        description: "Existing release tag to retag, for example vX.Y.Z."
         required: false
         type: string
 
@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      MODULE_REPOSITORY: ghcr.io/amoenus/magnetron-kcl
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -35,21 +36,77 @@ jobs:
       - name: Install KCL CLI
         run: go install kcl-lang.io/cli/cmd/kcl@v0.12.4
 
-      - name: Validate KCL module
-        run: kcl run image.k
-
-      - name: Log in to GHCR
-        run: kcl registry login -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
-
-      - name: Publish module
-        run: kcl mod push oci://ghcr.io/amoenus/magnetron-kcl --force
-
       - name: Install crane
         shell: bash
         run: |
           set -euo pipefail
           go install github.com/google/go-containerregistry/cmd/crane@v0.20.6
           echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+      - name: Prepare release module metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must match vX.Y.Z: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          version="${RELEASE_TAG#v}"
+          image_repository="$(sed -n 's/^repository = "\(.*\)"/\1/p' image.k)"
+
+          echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          image_digest=""
+          for attempt in {1..60}; do
+            if image_digest="$(crane digest "${image_repository}:${RELEASE_TAG}" 2>/dev/null)"; then
+              break
+            fi
+            echo "Waiting for ${image_repository}:${RELEASE_TAG} to be available (${attempt}/60)"
+            sleep 30
+          done
+
+          if [[ -z "${image_digest}" ]]; then
+            echo "Could not resolve digest for ${image_repository}:${RELEASE_TAG}" >&2
+            exit 1
+          fi
+
+          sed -i -E "s/^version = \".*\"/version = \"${version}\"/" kcl.mod
+          cat > image.k <<EOF
+          repository = "${image_repository}"
+          tag = "${RELEASE_TAG}"
+          digest = "${image_digest}"
+          ref = "\${repository}@\${digest}"
+          EOF
+
+      - name: Validate KCL module
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_repository="$(sed -n 's/^repository = "\(.*\)"/\1/p' image.k)"
+          image_digest="$(sed -n 's/^digest = "\(.*\)"/\1/p' image.k)"
+          image_ref="$(sed -n 's/^ref = "\(.*\)"/\1/p' image.k)"
+          test "${image_ref}" = '${repository}@${digest}'
+          test "${image_repository}@${image_digest}" = "$(kcl run image.k | sed -n 's/^ref: //p')"
+
+          kcl run image.k
+          kcl run kubernetes.k
+
+      - name: Log in to GHCR
+        run: kcl registry login -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
+
+      - name: Publish module
+        run: kcl mod push "oci://${MODULE_REPOSITORY}" --force
+
+      - name: Tag latest KCL module
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          crane tag "${MODULE_REPOSITORY}:${version}" latest
+          version_digest="$(crane digest "${MODULE_REPOSITORY}:${version}")"
+          latest_digest="$(crane digest "${MODULE_REPOSITORY}:latest")"
+          test "${version_digest}" = "${latest_digest}"
 
       - name: Tag release OCI image
         shell: bash
@@ -64,7 +121,6 @@ jobs:
 
           image_repository="$(sed -n 's/^repository = "\(.*\)"/\1/p' image.k)"
           image_digest="$(sed -n 's/^digest = "\(.*\)"/\1/p' image.k)"
-          echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
           crane tag "${image_repository}@${image_digest}" "${RELEASE_TAG}"
 
       - name: Install Cosign
@@ -105,7 +161,8 @@ jobs:
           image_digest="$(sed -n 's/^digest = "\(.*\)"/\1/p' image.k)"
           image_ref="${image_repository}@${image_digest}"
           image_tag="${image_repository}:${RELEASE_TAG}"
-          module_ref="oci://ghcr.io/amoenus/magnetron-kcl:${version}"
+          module_ref="oci://${MODULE_REPOSITORY}:${version}"
+          module_latest_ref="oci://${MODULE_REPOSITORY}:latest"
           notes="$(cat <<EOF
           ## OCI image
 
@@ -122,6 +179,14 @@ jobs:
           \`\`\`
 
           ## KCL module
+
+          Latest:
+
+          \`\`\`text
+          ${module_latest_ref}
+          \`\`\`
+
+          Versioned:
 
           \`\`\`text
           ${module_ref}

@@ -43,4 +43,5 @@ annotations:
   org.opencontainers.image.vendor: Amoenus
   org.opencontainers.image.authors: Amoenus
   org.opencontainers.image.licenses: MIT
-  org.opencontainers.image.version: 0.1.0
+  org.opencontainers.image.version: 0.0.0
+  org.opencontainers.image.revision: unknown

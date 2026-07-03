@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*.*.*"
   pull_request:
   workflow_dispatch:
 
@@ -126,6 +128,22 @@ jobs:
       - name: Restrict APK signing key permissions
         run: chmod 600 melange.rsa
 
+      - name: Prepare release package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="0.0.0"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Release tag must match vX.Y.Z: ${GITHUB_REF_NAME}" >&2
+              exit 1
+            fi
+            version="${GITHUB_REF_NAME#v}"
+          fi
+
+          sed -i -E "s/^version = \".*\"/version = \"${version}\"/" pyproject.toml
+          sed -i -E "s/^(  version: ).*/\1${version}/" melange.yaml
+
       - name: Build Magnetron APK
         run: sudo "$(go env GOPATH)/bin/melange" build melange.yaml --arch "${{ matrix.melange_arch }}" --runner bubblewrap --signing-key melange.rsa
 
@@ -185,6 +203,30 @@ jobs:
           go install "chainguard.dev/apko@${APKO_VERSION}"
           echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
 
+      - name: Install crane
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/google/go-containerregistry/cmd/crane@v0.20.6
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+      - name: Prepare OCI image metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="0.0.0"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Release tag must match vX.Y.Z: ${GITHUB_REF_NAME}" >&2
+              exit 1
+            fi
+            version="${GITHUB_REF_NAME#v}"
+          fi
+
+          sed -i -E "s/^(  org.opencontainers.image.version: ).*/\1${version}/" apko.yaml
+          sed -i -E "s/^(  org.opencontainers.image.revision: ).*/\1${GITHUB_SHA}/" apko.yaml
+
       - name: Build pull request image tar
         if: github.event_name == 'pull_request'
         run: apko build apko.yaml magnetron:pr magnetron.tar -k melange.rsa.pub
@@ -226,6 +268,37 @@ jobs:
           done <<< "${{ steps.tags.outputs.tags }}"
           sort -u image-refs.txt -o image-refs.txt
           cat image-refs.txt
+
+      - name: Verify published OCI metadata
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+          expected_version="0.0.0"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            expected_version="${GITHUB_REF_NAME#v}"
+          fi
+
+          while IFS= read -r ref; do
+            manifest="$(crane manifest "${ref}")"
+            media_type="$(jq -r '.mediaType' <<< "${manifest}")"
+            test "${media_type}" = "application/vnd.oci.image.index.v1+json"
+
+            jq -e '
+              [.manifests[].mediaType] | all(. == "application/vnd.oci.image.manifest.v1+json")
+            ' <<< "${manifest}" >/dev/null
+            jq -e '
+              [.manifests[].platform | "\(.os)/\(.architecture)"] as $platforms
+              | ($platforms | index("linux/amd64")) and ($platforms | index("linux/arm64"))
+            ' <<< "${manifest}" >/dev/null
+
+            actual_version="$(jq -r '.annotations["org.opencontainers.image.version"]' <<< "${manifest}")"
+            actual_revision="$(jq -r '.annotations["org.opencontainers.image.revision"]' <<< "${manifest}")"
+            test "${actual_version}" = "${expected_version}"
+            test "${actual_revision}" = "${GITHUB_SHA}"
+          done < image-refs.txt
 
       - name: Install Cosign
         if: github.event_name != 'pull_request'
