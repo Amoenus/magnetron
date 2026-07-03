@@ -9,6 +9,7 @@ dist/
 htmlcov/
 coverage/
 .coverage
+.coverage.*
 *.egg-info/
 *.tar
 melange.rsa

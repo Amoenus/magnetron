@@ -16,21 +16,23 @@
 
     <form method="post" action="/settings" class="settings-form">
       {% for field in config_fields %}
-      <div class="field config-field">
-        <label for="{{ field.name }}">{{ field.label }}</label>
+      <div class="config-field">
         {% if field.locked %}
-        <input id="{{ field.name }}" name="{{ field.name }}" value="{{ field.display_value }}" readonly>
+        {{ text_field(field.name, field.label, field.display_value, "", "off", "text", True) }}
         <span class="metadata-line">Locked by {{ field.env_name }}</span>
         {% elif field.sensitive %}
-        <input id="{{ field.name }}" name="{{ field.name }}" type="password" value="" placeholder="{% if field.value %}Leave blank to keep configured value{% else %}Not configured{% endif %}" autocomplete="off">
+        {{ text_field(field.name, field.label, "", "Leave blank to keep configured value" if field.value else "Not configured", "off", "password") }}
         {% elif field.name == "default_action" %}
+        <div class="field">
+        <label for="{{ field.name }}">{{ field.label }}</label>
         <select id="{{ field.name }}" name="{{ field.name }}">
           {% for action in ["index", "download", "both"] %}
           <option value="{{ action }}" {% if action == field.value %}selected{% endif %}>{{ action }}</option>
           {% endfor %}
         </select>
+        </div>
         {% else %}
-        <input id="{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}" autocomplete="off">
+        {{ text_field(field.name, field.label, field.value) }}
         {% endif %}
       </div>
       {% endfor %}
