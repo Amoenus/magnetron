@@ -152,6 +152,25 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "up"})
 
+    def test_index_renders_server_template(self):
+        client = TestClient(app.app)
+
+        response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="http://testserver/static/app.css"', response.text)
+        self.assertIn("Submit magnet", response.text)
+        self.assertIn("No submissions yet.", response.text)
+
+    def test_static_css_serves_design_tokens(self):
+        client = TestClient(app.app)
+
+        response = client.get("/static/app.css")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("--color-surface-page", response.text)
+        self.assertIn("--space-4", response.text)
+
     def test_magnet_intake_route(self):
         client = TestClient(app.app)
 

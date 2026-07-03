@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Magnetron</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Manual intake</p>
+        <h1>Magnetron</h1>
+      </div>
+      <a class="status-link" href="/readyz">Readiness</a>
+    </header>
+
+    {% if notice %}
+    <p class="notice" role="status">{{ notice }}</p>
+    {% endif %}
+
+    <section class="panel" aria-labelledby="submit-heading">
+      <h2 id="submit-heading">Submit magnet</h2>
+      <form method="post" action="/submit" class="intake-form">
+        <div class="field field-full">
+          <label for="magnet">Magnet link</label>
+          <textarea id="magnet" name="magnet" required autocomplete="off"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="action">Action</label>
+          <select id="action" name="action">
+            {% for action in actions %}
+            <option value="{{ action }}" {% if action == default_action %}selected{% endif %}>{{ action }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="contentType">Content type</label>
+          <select id="contentType" name="contentType">
+            {% for content_type in content_types %}
+            <option value="{{ content_type.value }}" {% if content_type.value == "tv_show" %}selected{% endif %}>
+              {{ content_type.label }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="contentSource">Known ID source</label>
+          <select id="contentSource" name="contentSource">
+            {% for source in content_sources %}
+            <option value="{{ source.value }}">{{ source.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="contentId">Known ID</label>
+          <input id="contentId" name="contentId" placeholder="89180 or tt1234567" autocomplete="off">
+        </div>
+
+        <div class="actions">
+          <button type="submit">Submit</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel" aria-labelledby="recent-heading">
+      <h2 id="recent-heading">Recent submissions</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Time</th>
+              <th scope="col">Action</th>
+              <th scope="col">Info hash</th>
+              <th scope="col">Name</th>
+              <th scope="col">bitmagnet</th>
+              <th scope="col">qBittorrent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in recent %}
+            <tr>
+              <td>{{ item.timestamp }}</td>
+              <td>{{ item.action }}</td>
+              <td><code>{{ item.info_hash_short }}</code></td>
+              <td>{{ item.name }}</td>
+              <td>
+                {% if item.bitmagnet %}
+                <span class="result {{ item.bitmagnet.status_class }}">{{ item.bitmagnet.status }}</span>
+                {{ item.bitmagnet.message }}
+                {% endif %}
+              </td>
+              <td>
+                {% if item.qbittorrent %}
+                <span class="result {{ item.qbittorrent.status_class }}">{{ item.qbittorrent.status }}</span>
+                {{ item.qbittorrent.message }}
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="empty-state">No submissions yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

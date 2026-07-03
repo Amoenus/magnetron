@@ -1,0 +1,287 @@
+@layer reset, tokens, base, components, utilities;
+
+@layer reset {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body,
+  h1,
+  h2,
+  p {
+    margin: 0;
+  }
+
+  textarea,
+  select,
+  input,
+  button {
+    font: inherit;
+  }
+}
+
+@layer tokens {
+  :root {
+    --color-surface-page: #f5f7fb;
+    --color-surface-panel: #ffffff;
+    --color-surface-raised: #eef3f8;
+    --color-surface-control: #ffffff;
+    --color-text-primary: #172033;
+    --color-text-secondary: #536176;
+    --color-text-muted: #697789;
+    --color-border-subtle: #d7dee8;
+    --color-border-strong: #a8b4c4;
+    --color-action: #0f6b66;
+    --color-action-hover: #0a5652;
+    --color-text-on-action: #ffffff;
+    --color-focus: #2457d6;
+    --color-success: #1f7a3f;
+    --color-danger: #b42318;
+    --color-code: #174ea6;
+    --color-shadow: rgb(15 23 42 / 10%);
+
+    --font-family-body: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-family-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --font-size-0: 0.8125rem;
+    --font-size-1: 0.9375rem;
+    --font-size-2: 1rem;
+    --font-size-3: 1.25rem;
+    --font-size-4: 1.875rem;
+    --line-height-tight: 1.2;
+    --line-height-body: 1.5;
+
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 3rem;
+
+    --size-content: 72rem;
+    --size-control-min: 2.75rem;
+    --radius-1: 0.375rem;
+    --radius-2: 0.5rem;
+    --shadow-panel: 0 1rem 2.5rem var(--color-shadow);
+  }
+}
+
+@layer base {
+  body {
+    min-width: 20rem;
+    min-height: 100vh;
+    background: var(--color-surface-page);
+    color: var(--color-text-primary);
+    color-scheme: light;
+    font-family: var(--font-family-body);
+    font-size: var(--font-size-2);
+    line-height: var(--line-height-body);
+  }
+
+  h1,
+  h2 {
+    color: var(--color-text-primary);
+    line-height: var(--line-height-tight);
+  }
+
+  h1 {
+    font-size: var(--font-size-4);
+  }
+
+  h2 {
+    font-size: var(--font-size-3);
+  }
+
+  code {
+    color: var(--color-code);
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-1);
+  }
+
+  :focus-visible {
+    outline: 0.1875rem solid var(--color-focus);
+    outline-offset: 0.125rem;
+  }
+}
+
+@layer components {
+  .app-shell {
+    width: min(100% - var(--space-5), var(--size-content));
+    margin-inline: auto;
+    padding-block: var(--space-6);
+  }
+
+  .app-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-block-end: var(--space-5);
+  }
+
+  .eyebrow {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-0);
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .status-link {
+    min-height: var(--size-control-min);
+    display: inline-flex;
+    align-items: center;
+    border: 0.0625rem solid var(--color-border-subtle);
+    border-radius: var(--radius-1);
+    padding-inline: var(--space-4);
+    background: var(--color-surface-panel);
+    color: var(--color-action);
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .notice {
+    margin-block-end: var(--space-5);
+    border-inline-start: 0.25rem solid var(--color-action);
+    border-radius: var(--radius-1);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-raised);
+    color: var(--color-text-primary);
+  }
+
+  .panel {
+    border: 0.0625rem solid var(--color-border-subtle);
+    border-radius: var(--radius-2);
+    padding: var(--space-5);
+    background: var(--color-surface-panel);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .panel + .panel {
+    margin-block-start: var(--space-5);
+  }
+
+  .intake-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4);
+    margin-block-start: var(--space-4);
+  }
+
+  .field {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .field-full,
+  .actions {
+    grid-column: 1 / -1;
+  }
+
+  label {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-1);
+    font-weight: 700;
+  }
+
+  textarea,
+  select,
+  input {
+    width: 100%;
+    min-height: var(--size-control-min);
+    border: 0.0625rem solid var(--color-border-strong);
+    border-radius: var(--radius-1);
+    padding: var(--space-3);
+    background: var(--color-surface-control);
+    color: var(--color-text-primary);
+  }
+
+  textarea {
+    min-height: 8rem;
+    resize: vertical;
+  }
+
+  button {
+    min-height: var(--size-control-min);
+    border: 0;
+    border-radius: var(--radius-1);
+    padding-inline: var(--space-5);
+    background: var(--color-action);
+    color: var(--color-text-on-action);
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: var(--color-action-hover);
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    margin-block-start: var(--space-4);
+    border: 0.0625rem solid var(--color-border-subtle);
+    border-radius: var(--radius-1);
+  }
+
+  table {
+    width: 100%;
+    min-width: 56rem;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    border-block-end: 0.0625rem solid var(--color-border-subtle);
+    padding: var(--space-3);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  th {
+    background: var(--color-surface-raised);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-0);
+    font-weight: 700;
+  }
+
+  tr:last-child td {
+    border-block-end: 0;
+  }
+
+  .result {
+    font-weight: 700;
+  }
+
+  .ok {
+    color: var(--color-success);
+  }
+
+  .fail {
+    color: var(--color-danger);
+  }
+
+  .empty-state {
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+}
+
+@layer utilities {
+  @media (max-width: 42rem) {
+    .app-shell {
+      width: min(100% - var(--space-4), var(--size-content));
+      padding-block: var(--space-5);
+    }
+
+    .panel {
+      padding: var(--space-4);
+    }
+
+    .intake-form {
+      grid-template-columns: 1fr;
+    }
+  }
+}

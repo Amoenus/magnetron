@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
-import html
 import json
 import os
 import re
@@ -11,11 +10,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 import uvicorn
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 
@@ -26,6 +28,9 @@ VALID_CONTENT_TYPES = {"unknown", "movie", "tv_show", "ebook", "audiobook", "mus
 VALID_CONTENT_SOURCES = {"", "tmdb", "imdb"}
 
 Action = Literal["index", "download", "both"]
+PACKAGE_DIR = Path(__file__).resolve().parent
+TEMPLATES = Jinja2Templates(directory=PACKAGE_DIR / "templates")
+STATIC_DIR = PACKAGE_DIR / "static"
 
 
 @dataclass(frozen=True)
@@ -116,6 +121,7 @@ app = FastAPI(
     description="Manual magnet intake for bitmagnet and qBittorrent.",
     version="0.1.0",
 )
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def normalize_info_hash(value: str) -> str:
@@ -306,8 +312,8 @@ def submit_intake(
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return render_page(settings, recent_submissions.list())
+def index(request: Request) -> HTMLResponse:
+    return render_page(request, settings, recent_submissions.list())
 
 
 @app.get("/healthz")
@@ -343,6 +349,7 @@ def intake_magnet(payload: IntakeRequest) -> JSONResponse:
 
 @app.post("/submit", response_class=HTMLResponse)
 def submit_form(
+    request: Request,
     magnet: str = Form(...),
     action: str = Form("index"),
     contentType: str = Form("tv_show"),
@@ -359,103 +366,62 @@ def submit_form(
         contentId,
     )
     notice = body.get("error") or f"Submitted {body['infoHash']}"
-    return HTMLResponse(render_page(settings, recent_submissions.list(), notice), status_code=status)
+    return render_page(request, settings, recent_submissions.list(), notice, status)
 
 
-def render_page(settings: Settings, recent: list[Submission], notice: str = "") -> str:
-    rows = "\n".join(
-        "<tr>"
-        f"<td>{html.escape(item.timestamp)}</td>"
-        f"<td>{html.escape(item.action)}</td>"
-        f"<td><code>{html.escape(item.info_hash[:12])}...</code></td>"
-        f"<td>{html.escape(item.name or '(unnamed)')}</td>"
-        f"<td>{render_result(item.bitmagnet)}</td>"
-        f"<td>{render_result(item.qbittorrent)}</td>"
-        "</tr>"
-        for item in recent
+def render_page(
+    request: Request,
+    settings: Settings,
+    recent: list[Submission],
+    notice: str = "",
+    status_code: int = 200,
+) -> HTMLResponse:
+    return TEMPLATES.TemplateResponse(
+        request,
+        "index.html",
+        {
+            "actions": ["index", "download", "both"],
+            "content_sources": [
+                {"value": "", "label": "None"},
+                {"value": "tmdb", "label": "TMDB"},
+                {"value": "imdb", "label": "IMDb"},
+            ],
+            "content_types": [
+                {"value": "tv_show", "label": "TV show"},
+                {"value": "movie", "label": "Movie"},
+                {"value": "unknown", "label": "Unknown"},
+                {"value": "music", "label": "Music"},
+                {"value": "audiobook", "label": "Audiobook"},
+                {"value": "ebook", "label": "Ebook"},
+                {"value": "software", "label": "Software"},
+            ],
+            "default_action": settings.default_action,
+            "notice": notice,
+            "recent": [submission_view(item) for item in recent],
+        },
+        status_code=status_code,
     )
-    action_options = "\n".join(
-        f'<option value="{action}" {"selected" if action == settings.default_action else ""}>{action}</option>'
-        for action in ["index", "download", "both"]
-    )
-    content_type_options = "\n".join(
-        f'<option value="{value}" {"selected" if value == "tv_show" else ""}>{label}</option>'
-        for value, label in [
-            ("tv_show", "TV show"),
-            ("movie", "Movie"),
-            ("unknown", "Unknown"),
-            ("music", "Music"),
-            ("audiobook", "Audiobook"),
-            ("ebook", "Ebook"),
-            ("software", "Software"),
-        ]
-    )
-    content_source_options = "\n".join(
-        f'<option value="{value}">{label}</option>'
-        for value, label in [
-            ("", "None"),
-            ("tmdb", "TMDB"),
-            ("imdb", "IMDb"),
-        ]
-    )
-    notice_html = f'<p class="notice">{html.escape(notice)}</p>' if notice else ""
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Magnetron</title>
-  <style>
-    body {{ margin: 0; font-family: system-ui, sans-serif; background: #111827; color: #e5e7eb; }}
-    main {{ max-width: 1080px; margin: 0 auto; padding: 32px 20px; }}
-    h1 {{ font-size: 28px; margin: 0 0 24px; }}
-    form {{ display: grid; gap: 12px; margin-bottom: 28px; }}
-    textarea, select, input, button {{ font: inherit; border-radius: 6px; border: 1px solid #4b5563; }}
-    textarea, select, input {{ background: #030712; color: #f9fafb; padding: 10px; }}
-    textarea {{ min-height: 120px; resize: vertical; }}
-    button {{ justify-self: start; background: #0f766e; color: white; border: 0; padding: 10px 16px; cursor: pointer; }}
-    table {{ width: 100%; border-collapse: collapse; background: #030712; }}
-    th, td {{ border-bottom: 1px solid #374151; padding: 10px; text-align: left; vertical-align: top; }}
-    th {{ color: #9ca3af; font-size: 13px; }}
-    code {{ color: #93c5fd; }}
-    .notice {{ background: #1f2937; border-left: 4px solid #0f766e; padding: 10px 12px; }}
-    .ok {{ color: #86efac; }}
-    .fail {{ color: #fca5a5; }}
-  </style>
-</head>
-<body>
-<main>
-  <h1>Magnetron</h1>
-  {notice_html}
-  <form method="post" action="/submit">
-    <label for="magnet">Magnet link</label>
-    <textarea id="magnet" name="magnet" required></textarea>
-    <label for="action">Action</label>
-    <select id="action" name="action">{action_options}</select>
-    <label for="contentType">Content type</label>
-    <select id="contentType" name="contentType">{content_type_options}</select>
-    <label for="contentSource">Known ID source</label>
-    <select id="contentSource" name="contentSource">{content_source_options}</select>
-    <label for="contentId">Known ID</label>
-    <input id="contentId" name="contentId" placeholder="89180 or tt1234567">
-    <button type="submit">Submit</button>
-  </form>
-  <h2>Recent submissions</h2>
-  <table>
-    <thead><tr><th>Time</th><th>Action</th><th>Info hash</th><th>Name</th><th>bitmagnet</th><th>qBittorrent</th></tr></thead>
-    <tbody>{rows}</tbody>
-  </table>
-</main>
-</body>
-</html>"""
 
 
-def render_result(result: DownstreamResult | None) -> str:
+def submission_view(submission: Submission) -> dict[str, Any]:
+    return {
+        "timestamp": submission.timestamp,
+        "action": submission.action,
+        "info_hash_short": f"{submission.info_hash[:12]}...",
+        "name": submission.name or "(unnamed)",
+        "bitmagnet": result_view(submission.bitmagnet),
+        "qbittorrent": result_view(submission.qbittorrent),
+    }
+
+
+def result_view(result: DownstreamResult | None) -> dict[str, Any] | None:
     if result is None:
-        return ""
-    klass = "ok" if result.ok else "fail"
-    status = result.status if result.status is not None else "n/a"
-    return f'<span class="{klass}">{status}</span> {html.escape(result.message[:120])}'
+        return None
+    return {
+        "message": result.message[:120],
+        "status": result.status if result.status is not None else "n/a",
+        "status_class": "ok" if result.ok else "fail",
+    }
 
 
 def submission_to_dict(submission: Submission) -> dict[str, Any]:
