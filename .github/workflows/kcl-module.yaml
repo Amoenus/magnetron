@@ -5,15 +5,23 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to retag, for example v0.1.6."
+        required: false
+        type: string
 
 permissions:
   contents: write
   packages: write
+  id-token: write
 
 jobs:
   publish:
     name: Publish KCL module
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -36,6 +44,49 @@ jobs:
       - name: Publish module
         run: kcl mod push oci://ghcr.io/amoenus/magnetron-kcl --force
 
+      - name: Install crane
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/google/go-containerregistry/cmd/crane@v0.20.6
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+
+      - name: Tag release OCI image
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          module_version="$(sed -n 's/^version = "\(.*\)"/\1/p' kcl.mod)"
+          if [[ "${version}" != "${module_version}" ]]; then
+            echo "Release tag ${RELEASE_TAG} does not match kcl.mod version ${module_version}" >&2
+            exit 1
+          fi
+
+          image_repository="$(sed -n 's/^repository = "\(.*\)"/\1/p' image.k)"
+          image_digest="$(sed -n 's/^digest = "\(.*\)"/\1/p' image.k)"
+          echo "${{ secrets.GITHUB_TOKEN }}" | crane auth login ghcr.io -u "${{ github.actor }}" --password-stdin
+          crane tag "${image_repository}@${image_digest}" "${RELEASE_TAG}"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Sign release OCI image tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_repository="$(sed -n 's/^repository = "\(.*\)"/\1/p' image.k)"
+          cosign sign --yes "${image_repository}:${RELEASE_TAG}"
+
+      - name: Verify release OCI image tag signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_repository="$(sed -n 's/^repository = "\(.*\)"/\1/p' image.k)"
+          identity='https://github.com/Amoenus/magnetron/.github/workflows/kcl-module.yaml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+)'
+          cosign verify "${image_repository}:${RELEASE_TAG}" \
+            --certificate-identity-regexp "${identity}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
       - name: Create GitHub release
         if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
@@ -43,17 +94,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           module_version="$(sed -n 's/^version = "\(.*\)"/\1/p' kcl.mod)"
           if [[ "${version}" != "${module_version}" ]]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match kcl.mod version ${module_version}" >&2
+            echo "Tag ${RELEASE_TAG} does not match kcl.mod version ${module_version}" >&2
             exit 1
           fi
 
           image_repository="$(sed -n 's/^repository = "\(.*\)"/\1/p' image.k)"
           image_digest="$(sed -n 's/^digest = "\(.*\)"/\1/p' image.k)"
           image_ref="${image_repository}@${image_digest}"
-          image_tag="${image_repository}:${GITHUB_REF_NAME}"
+          image_tag="${image_repository}:${RELEASE_TAG}"
           module_ref="oci://ghcr.io/amoenus/magnetron-kcl:${version}"
           notes="$(cat <<EOF
           ## OCI image
@@ -80,8 +131,8 @@ jobs:
           EOF
           )"
 
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create "${RELEASE_TAG}" \
             --verify-tag \
-            --title "Magnetron ${GITHUB_REF_NAME}" \
+            --title "Magnetron ${RELEASE_TAG}" \
             --notes "${notes}" \
             --generate-notes
